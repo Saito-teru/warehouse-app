@@ -12,6 +12,15 @@ app.get("/", (req, res) => {
 });
 
 app.get("/test-db", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT NOW()");
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Database connection error");
+  }
+});
+
 app.get("/init-db", async (req, res) => {
   try {
     await pool.query(`
@@ -70,15 +79,6 @@ CREATE TABLE IF NOT EXISTS checklist_template_items (
   } catch (err) {
     console.error(err);
     res.status(500).send("Initialization error");
-  }
-});
-
-  try {
-    const result = await pool.query("SELECT NOW()");
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Database connection error");
   }
 });
 
