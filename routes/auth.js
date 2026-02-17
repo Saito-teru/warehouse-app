@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require("../db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const authMiddleware = require("../middleware/auth");
 
 // ログイン
 router.post("/login", async (req, res) => {
@@ -42,9 +43,39 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// 開発用：管理者ユーザー作成（存在したら何もしない）
+// ログイン中ユーザー確認（トークン必須）
+router.get("/me", authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const result = await pool.query(
+      "SELECT id, name, email, role FROM users WHERE id = $1",
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json({ user: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch user" });
+  }
+});
+
+// 開発用：管理者ユーザー作成（キー必須）
 router.post("/seed-admin", async (req, res) => {
   try {
+    if (!process.env.ADMIN_SEED_KEY) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    const { key } = req.body || {};
+    if (key !== process.env.ADMIN_SEED_KEY) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
     const email = "admin@example.com";
     const password = "test1234";
     const name = "Admin";
