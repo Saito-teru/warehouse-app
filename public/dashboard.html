@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>ダッシュボード</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body{
+      font-family:sans-serif;
+      margin:0;
+      background:#f0f0f0;
+    }
+    header{
+      background:#1976d2;
+      color:#fff;
+      padding:12px 16px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+    }
+    button{
+      padding:6px 12px;
+      border:0;
+      border-radius:4px;
+      cursor:pointer;
+      background:#fff;
+    }
+    .container{
+      padding:20px;
+    }
+    .card{
+      background:#fff;
+      padding:16px;
+      border-radius:8px;
+      box-shadow:0 2px 6px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>ダッシュボード</div>
+  <button onclick="logout()">ログアウト</button>
+</header>
+
+<div class="container">
+  <div class="card">
+    <h3>ログイン成功</h3>
+    <p>ダッシュボードが表示されています。</p>
+  </div>
+</div>
+
+<script>
+  const token = localStorage.getItem("token");
+
+  if(!token){
+    location.href="/login.html";
+  }
+
+  function logout(){
+    localStorage.removeItem("token");
+    location.href="/login.html";
+  }
+</script>
+
+</body>
+</html>
