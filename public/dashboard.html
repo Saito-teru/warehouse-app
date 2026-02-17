@@ -46,34 +46,48 @@
 <div class="container">
   <div class="card">
     <h3>ログイン成功</h3>
-    <p id="userInfo">読み込み中...</p>
+    <p id="userInfo"></p>
   </div>
 </div>
 
 <script>
-  const token = localStorage.getItem("token");
-
-  if(!token){
+  function redirectToLogin(){
     location.href="/login.html";
   }
 
+  const token = localStorage.getItem("token");
+
+  if(!token){
+    redirectToLogin();
+  }
+
   function parseJwt(token){
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g,'+').replace(/_/g,'/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c){
-      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    return JSON.parse(jsonPayload);
+    try{
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g,'+').replace(/_/g,'/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64).split('').map(function(c){
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join('')
+      );
+      return JSON.parse(jsonPayload);
+    }catch{
+      redirectToLogin();
+    }
   }
 
   const user = parseJwt(token);
+
+  if(!user || !user.email){
+    redirectToLogin();
+  }
 
   document.getElementById("userInfo").innerText =
     "ユーザー: " + user.email + " / 権限: " + user.role;
 
   function logout(){
     localStorage.removeItem("token");
-    location.href="/login.html";
+    redirectToLogin();
   }
 </script>
 
