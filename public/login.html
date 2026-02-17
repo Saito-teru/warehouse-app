@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>ログイン</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body{
+      font-family: sans-serif;
+      background:#f0f0f0;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      height:100vh;
+      margin:0;
+    }
+    .box{
+      background:#fff;
+      padding:20px;
+      border-radius:8px;
+      width:320px;
+      box-shadow:0 2px 10px rgba(0,0,0,0.08);
+    }
+    h2{ margin:0 0 16px 0; }
+    label{ display:block; font-size:14px; margin:10px 0 6px; }
+    input{
+      width:100%;
+      padding:10px;
+      box-sizing:border-box;
+      border:1px solid #ccc;
+      border-radius:6px;
+    }
+    button{
+      width:100%;
+      padding:10px;
+      margin-top:14px;
+      border:0;
+      border-radius:6px;
+      cursor:pointer;
+    }
+    #error{
+      color:#c00;
+      margin-top:10px;
+      min-height:1em;
+      font-size:14px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="box">
+    <h2>ログイン</h2>
+
+    <label for="email">Email</label>
+    <input id="email" placeholder="Email" value="admin@example.com" />
+
+    <label for="password">Password</label>
+    <input id="password" type="password" placeholder="Password" value="test1234" />
+
+    <button id="loginBtn" type="button">ログイン</button>
+
+    <div id="error"></div>
+  </div>
+
+  <script>
+    async function login() {
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      document.getElementById("error").innerText = "";
+
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password })
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok) {
+          localStorage.setItem("token", data.token);
+          alert("ログイン成功");
+        } else {
+          document.getElementById("error").innerText = data.error || "ログイン失敗";
+        }
+      } catch (e) {
+        document.getElementById("error").innerText = "通信に失敗しました";
+      }
+    }
+
+    document.getElementById("loginBtn").addEventListener("click", login);
+  </script>
+
+</body>
+</html>

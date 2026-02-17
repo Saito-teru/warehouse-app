@@ -11,6 +11,8 @@ const PORT = process.env.PORT || 10000;
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static("public"));
+
 
 // /api 配下に auth ルートを接続（/api/login）
 app.use("/api", authRoutes);
