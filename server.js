@@ -3,11 +3,17 @@ const express = require("express");
 const cors = require("cors");
 const pool = require("./db");
 
+// authルート
+const authRoutes = require("./routes/auth");
+
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(cors());
 app.use(express.json());
+
+// /api 配下に auth ルートを接続（/api/login）
+app.use("/api", authRoutes);
 
 app.get("/", (req, res) => {
   res.send("Server is running");
@@ -26,7 +32,6 @@ app.get("/test-db", async (req, res) => {
 app.get("/init-db", async (req, res) => {
   try {
     await pool.query(`
-
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -74,7 +79,6 @@ CREATE TABLE IF NOT EXISTS checklist_template_items (
   equipment_id INTEGER REFERENCES equipment(id) ON DELETE CASCADE,
   default_quantity INTEGER NOT NULL
 );
-
     `);
 
     res.send("Database initialized");
