@@ -1,0 +1,339 @@
+<!-- public/qr-scan.html（完全版） -->
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QR読み取り（数量加算）</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; margin: 0; background: #f6f7f9; color: #111; }
+    header { position: sticky; top: 0; background: #fff; border-bottom: 1px solid #e5e7eb; padding: 12px 14px; z-index: 5; }
+    h1 { font-size: 18px; margin: 0 0 8px 0; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button, input { font: inherit; }
+    button { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; cursor: pointer; }
+    button:active { transform: translateY(1px); }
+    .btnPrimary { border-color: #111827; }
+    input[type="text"] { flex: 1; min-width: 160px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; }
+    main { padding: 12px 14px; }
+    .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); margin-bottom: 12px; }
+    .meta { font-size: 12px; color: #4b5563; margin-top: 6px; line-height: 1.5; }
+    .ok { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; padding: 12px; border-radius: 12px; white-space: pre-wrap; }
+    .err { background: #fff; border: 1px solid #fecaca; color: #991b1b; padding: 12px; border-radius: 12px; white-space: pre-wrap; }
+    .camWrap { position: relative; border-radius: 14px; overflow: hidden; border: 1px solid #e5e7eb; background: #000; }
+    video { width: 100%; height: auto; display: block; }
+    canvas { display: none; }
+    .overlay {
+      position: absolute; inset: 0; pointer-events: none;
+      display: grid; place-items: center;
+    }
+    .finder {
+      width: min(70vw, 280px); height: min(70vw, 280px);
+      border: 2px solid rgba(255,255,255,0.85);
+      border-radius: 16px;
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.25) inset;
+    }
+    .badgeRow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .pill { font-size: 12px; padding: 6px 10px; border-radius: 999px; background: #f3f4f6; border: 1px solid #e5e7eb; }
+    a { color: inherit; }
+    .small { font-size: 12px; color: #6b7280; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>QR読み取り（数量加算）</h1>
+    <div class="row">
+      <button id="start" class="btnPrimary" type="button">カメラ開始</button>
+      <button id="stop" type="button">停止</button>
+      <button id="torch" type="button" disabled>ライト</button>
+      <a href="/qr-list.html" class="pill" style="text-decoration:none">QR一覧へ</a>
+    </div>
+    <div class="meta">
+      読み取り成功 → <code>POST /api/qr-scan</code> → <code>current_quantity</code> を +1（上限は <code>total_quantity</code>）
+    </div>
+  </header>
+
+  <main>
+    <div class="panel">
+      <div class="camWrap">
+        <video id="video" playsinline></video>
+        <div class="overlay"><div class="finder"></div></div>
+      </div>
+      <canvas id="canvas"></canvas>
+      <div class="badgeRow">
+        <div class="pill" id="camState">カメラ：停止中</div>
+        <div class="pill" id="scanState">スキャン：待機</div>
+        <div class="pill" id="lastId">最後：-</div>
+      </div>
+      <div class="small" style="margin-top:10px">
+        カメラ許可のダイアログが出たら「許可」を選びます。許可後、枠の中にQRを入れると自動で読み取ります。<br>
+        PCでカメラが無い場合は、下の手動入力を使えます。
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="row">
+        <input id="manual" type="text" inputmode="numeric" placeholder="手動入力：QRの中身（例：1）" />
+        <button id="manualSend" class="btnPrimary" type="button">送信</button>
+      </div>
+      <div class="meta">QR仕様が「equipment.idのみ」なので、数字だけを入力します。</div>
+    </div>
+
+    <div id="msgOk" style="display:none" class="ok"></div>
+    <div id="msgErr" style="display:none" class="err"></div>
+
+    <div class="panel">
+      <div class="small">
+        動作確認URL（ブラウザで開く）：<br>
+        <code>http://localhost:10000/qr-scan.html</code><br>
+        もし読み取りはできるが加算に失敗する場合は、まずブラウザで <code>http://localhost:10000/api/qr-list</code> が返るか確認します。
+      </div>
+    </div>
+  </main>
+
+  <!-- QR解析ライブラリ（軽量・読み取り専用） -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const video = $("video");
+    const canvas = $("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+    const camState = $("camState");
+    const scanState = $("scanState");
+    const lastId = $("lastId");
+
+    const msgOk = $("msgOk");
+    const msgErr = $("msgErr");
+
+    let stream = null;
+    let rafId = null;
+    let scanning = false;
+
+    let lastScannedValue = null;
+    let lastScanAt = 0;
+    const SCAN_COOLDOWN_MS = 1500;
+
+    function showOk(text) {
+      msgErr.style.display = "none";
+      msgOk.style.display = "block";
+      msgOk.textContent = text;
+    }
+
+    function showErr(text) {
+      msgOk.style.display = "none";
+      msgErr.style.display = "block";
+      msgErr.textContent = text;
+    }
+
+    function clearMsg() {
+      msgOk.style.display = "none";
+      msgErr.style.display = "none";
+      msgOk.textContent = "";
+      msgErr.textContent = "";
+    }
+
+    function setCamState(text) { camState.textContent = "カメラ：" + text; }
+    function setScanState(text) { scanState.textContent = "スキャン：" + text; }
+
+    async function startCamera() {
+      clearMsg();
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showErr("このブラウザではカメラが使えません。別のブラウザで試してください。");
+        return;
+      }
+
+      try {
+        const constraints = {
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        };
+
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        await video.play();
+
+        setCamState("起動中");
+        setScanState("解析中");
+
+        enableTorchIfAvailable();
+        scanning = true;
+        tick();
+      } catch (e) {
+        showErr("カメラ開始に失敗しました。\n\n" + String(e && e.message ? e.message : e) + "\n\n確認:\n1) ブラウザのカメラ許可が許可になっている\n2) 他アプリがカメラを占有していない");
+        setCamState("停止中");
+        setScanState("待機");
+      }
+    }
+
+    function stopCamera() {
+      clearMsg();
+      scanning = false;
+
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+
+      if (video) {
+        video.pause();
+        video.srcObject = null;
+      }
+
+      if (stream) {
+        for (const t of stream.getTracks()) t.stop();
+        stream = null;
+      }
+
+      $("torch").disabled = true;
+      $("torch").textContent = "ライト";
+
+      setCamState("停止中");
+      setScanState("待機");
+    }
+
+    function nowMs() { return Date.now(); }
+
+    function normalizeId(text) {
+      const s = String(text ?? "").trim();
+      if (!s) return null;
+      const n = Number(s);
+      if (!Number.isInteger(n) || n <= 0) return null;
+      return String(n);
+    }
+
+    async function postScan(qrText) {
+      const idStr = normalizeId(qrText);
+      if (!idStr) {
+        showErr("QRの内容が不正です。\n\n期待: 数字のみ（equipment.id）\n受信: " + String(qrText));
+        return;
+      }
+
+      lastId.textContent = "最後：" + idStr;
+
+      try {
+        const res = await fetch("/api/qr-scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({ qr_text: idStr })
+        });
+
+        const text = await res.text();
+        let json = null;
+        try { json = JSON.parse(text); } catch (_) {}
+
+        if (!res.ok) {
+          const detail = json ? JSON.stringify(json, null, 2) : text;
+          throw new Error("HTTP " + res.status + "\n" + detail);
+        }
+
+        const eq = json;
+        const warn = eq && eq.warning ? "\n\n注意: " + eq.warning : "";
+
+        showOk(
+          "加算成功\n\n" +
+          "ID: " + eq.id + "\n" +
+          "機材名: " + (eq.name ?? "-") + "\n" +
+          "総数: " + eq.total_quantity + "\n" +
+          "現在: " + eq.current_quantity +
+          warn
+        );
+
+        if (navigator.vibrate) navigator.vibrate(100);
+      } catch (e) {
+        showErr("加算に失敗しました。\n\n" + String(e && e.message ? e.message : e) + "\n\n確認:\n1) サーバーが起動している（Server running on port 10000）\n2) /api/qr-scan が存在する（server.js が最新版）");
+      }
+    }
+
+    function tick() {
+      if (!scanning) return;
+
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+
+        if (w && h) {
+          canvas.width = w;
+          canvas.height = h;
+          ctx.drawImage(video, 0, 0, w, h);
+
+          const imageData = ctx.getImageData(0, 0, w, h);
+          const code = jsQR(imageData.data, w, h, { inversionAttempts: "dontInvert" });
+
+          if (code && code.data) {
+            const value = String(code.data).trim();
+            const t = nowMs();
+
+            const cooldownOk = (t - lastScanAt) >= SCAN_COOLDOWN_MS;
+            const changedOk = value !== lastScannedValue;
+
+            if (cooldownOk || changedOk) {
+              lastScannedValue = value;
+              lastScanAt = t;
+              setScanState("読取: " + value);
+
+              postScan(value);
+            }
+          }
+        }
+      }
+
+      rafId = requestAnimationFrame(tick);
+    }
+
+    async function enableTorchIfAvailable() {
+      const btn = $("torch");
+      btn.disabled = true;
+      btn.textContent = "ライト";
+
+      try {
+        if (!stream) return;
+        const track = stream.getVideoTracks()[0];
+        if (!track) return;
+
+        const caps = track.getCapabilities ? track.getCapabilities() : null;
+        if (!caps || !caps.torch) return;
+
+        btn.disabled = false;
+
+        let torchOn = false;
+        btn.textContent = "ライト:OFF";
+
+        btn.onclick = async () => {
+          torchOn = !torchOn;
+          await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+          btn.textContent = torchOn ? "ライト:ON" : "ライト:OFF";
+        };
+      } catch (_) {
+        $("torch").disabled = true;
+      }
+    }
+
+    $("start").addEventListener("click", startCamera);
+    $("stop").addEventListener("click", stopCamera);
+
+    $("manualSend").addEventListener("click", () => {
+      clearMsg();
+      const v = $("manual").value;
+      postScan(v);
+    });
+
+    $("manual").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        $("manualSend").click();
+      }
+    });
+
+    setCamState("停止中");
+    setScanState("待機");
+  </script>
+</body>
+</html>
