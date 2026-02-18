@@ -1,4 +1,4 @@
-<!-- public/qr-list.html（完全版：PDF出力=手動印刷ボタン方式） -->
+<!-- public/qr-list.html（完全版：PDF出力 + CSV出力（日本語ヘッダー）） -->
 <!doctype html>
 <html lang="ja">
 <head>
@@ -26,254 +26,141 @@
     .hint { font-size: 12px; color: #6b7280; margin-top: 10px; line-height: 1.5; }
     .toolbar { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .pill { font-size: 12px; padding: 6px 10px; border-radius: 999px; background: #f3f4f6; border: 1px solid #e5e7eb; }
-    a { color: inherit; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>QR一覧</h1>
 
-    <div class="row">
-      <input id="q" type="search" placeholder="検索（例：機材名 / ID）" />
-      <button id="reload" type="button">再読み込み</button>
-      <button id="pdf" class="btnPrimary" type="button" disabled>PDF出力</button>
-      <a href="/qr-scan.html" class="pill" style="text-decoration:none">QR読み取りへ</a>
-    </div>
+<header>
+  <h1>QR一覧</h1>
 
-    <div class="meta">
-      PDF出力は「別タブに印刷用ページを開く」→「そのページの印刷ボタンを押す」方式です。<br>
-      印刷画面で送信先（プリンター）を「PDFに保存」に変更して保存します。
-    </div>
-  </header>
+  <div class="row">
+    <input id="q" type="search" placeholder="検索（例：機材名 / ID）" />
+    <button id="reload">再読み込み</button>
+    <button id="pdf" class="btnPrimary" disabled>PDF出力</button>
+    <button id="csv" disabled>CSV出力</button>
+  </div>
+</header>
 
-  <main>
-    <div id="status" class="meta">読み込み中…</div>
+<main>
+  <div id="status">読み込み中…</div>
+  <div id="grid" class="grid"></div>
+</main>
 
-    <div class="toolbar">
-      <div class="pill" id="countPill">件数：-</div>
-      <div class="pill" id="updatedPill">更新：-</div>
-      <div class="pill" id="filterPill">表示：全件</div>
-    </div>
+<script>
 
-    <div style="height:10px"></div>
+const $ = id => document.getElementById(id);
 
-    <div id="error" style="display:none" class="err"></div>
-    <div id="grid" class="grid"></div>
+let allItems = [];
+let currentItems = [];
 
-    <div class="hint">
-      まずサーバー起動を確認してください：<br>
-      1) ターミナルに「Server running on port 10000」<br>
-      2) ブラウザで http://localhost:10000/api/qr-list を開いてJSONが返る
-    </div>
-  </main>
+function render(items){
 
-  <script>
-    const $ = (id) => document.getElementById(id);
+ currentItems = items;
 
-    let allItems = [];
-    let currentItems = [];
+ const grid = $("grid");
+ grid.innerHTML = "";
 
-    function toPngDataUrl(qrBase64) {
-      return "data:image/png;base64," + qrBase64;
-    }
+ for(const it of items){
 
-    function render(items) {
-      currentItems = items;
+  const div = document.createElement("div");
+  div.className = "card";
 
-      const grid = $("grid");
-      grid.innerHTML = "";
+  div.innerHTML = `
+   <div class="name">${it.name}</div>
+   <div class="sub">ID:${it.id}</div>
+   <div class="sub">合計:${it.total_quantity}</div>
+   <div class="sub">現在:${it.current_quantity}</div>
+   <div class="qrwrap">
+    <img src="data:image/png;base64,${it.qr_png_base64}">
+   </div>
+  `;
 
-      for (const it of items) {
-        const card = document.createElement("div");
-        card.className = "card";
+  grid.appendChild(div);
+ }
 
-        const name = document.createElement("p");
-        name.className = "name";
-        name.textContent = it.name ?? "(no name)";
+ $("pdf").disabled = items.length === 0;
+ $("csv").disabled = items.length === 0;
+}
 
-        const sub = document.createElement("p");
-        sub.className = "sub";
-        const idTxt = `ID: ${it.id}`;
-        const qtyTxt = `総数: ${it.total_quantity} / 現在: ${it.current_quantity}`;
-        sub.textContent = `${idTxt}　${qtyTxt}`;
+async function load(){
 
-        const qrwrap = document.createElement("div");
-        qrwrap.className = "qrwrap";
+ const res = await fetch("/api/qr-list");
+ const data = await res.json();
 
-        const img = document.createElement("img");
-        if (it.qr_png_base64 && String(it.qr_png_base64).length > 0) {
-          img.src = toPngDataUrl(it.qr_png_base64);
-          img.alt = `QR for equipment ${it.id}`;
-        } else {
-          img.alt = "QRなし";
-        }
+ allItems = data;
 
-        qrwrap.appendChild(img);
+ render(data);
 
-        card.appendChild(name);
-        card.appendChild(sub);
-        card.appendChild(qrwrap);
+ $("status").innerText = "読み込み完了";
+}
 
-        grid.appendChild(card);
-      }
+function csvEscape(v){
 
-      $("countPill").textContent = `件数：${items.length}`;
-      $("pdf").disabled = items.length === 0;
-    }
+ const s = String(v ?? "");
 
-    function applyFilter() {
-      const q = $("q").value.trim().toLowerCase();
-      if (!q) {
-        $("filterPill").textContent = "表示：全件";
-        render(allItems);
-        return;
-      }
-      const filtered = allItems.filter(it => {
-        const idStr = String(it.id ?? "").toLowerCase();
-        const nameStr = String(it.name ?? "").toLowerCase();
-        return idStr.includes(q) || nameStr.includes(q);
-      });
-      $("filterPill").textContent = `表示：検索 "${q}"`;
-      render(filtered);
-    }
+ if(/[",\r\n]/.test(s))
+  return `"${s.replaceAll('"','""')}"`;
 
-    async function load() {
-      $("error").style.display = "none";
-      $("status").textContent = "読み込み中…";
-      $("pdf").disabled = true;
+ return s;
+}
 
-      try {
-        const res = await fetch("/api/qr-list", { method: "GET", headers: { "Accept": "application/json" } });
-        if (!res.ok) throw new Error(`HTTP ${res.status}\n${await res.text()}`);
+function buildCsv(items){
 
-        const data = await res.json();
-        if (!Array.isArray(data)) throw new Error("返却形式が配列ではありません");
+ // ヘッダー日本語化
+ const header = [
+  "ID",
+  "名",
+  "合計数量",
+  "現在の数量",
+  "作成日時"
+ ];
 
-        allItems = data;
-        $("status").textContent = "読み込み完了";
-        $("updatedPill").textContent = `更新：${new Date().toLocaleString()}`;
-        applyFilter();
-      } catch (e) {
-        $("status").textContent = "読み込み失敗";
-        $("error").style.display = "block";
-        $("error").textContent =
-          "読み込みに失敗しました。\n\n" +
-          String(e && e.message ? e.message : e) +
-          "\n\n確認:\n" +
-          "1) サーバーが起動しているか（Server running on port 10000）\n" +
-          "2) /api/qr-list がブラウザで開けるか";
-      }
-    }
+ const lines = [];
 
-    function escHtml(s) {
-      return String(s ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-    }
+ lines.push(header.join(","));
 
-    function buildPrintHtml(items) {
-      const now = new Date().toLocaleString();
+ for(const it of items){
 
-      const cardsHtml = items.map(it => {
-        const id = escHtml(it.id);
-        const name = escHtml(it.name ?? "");
-        const total = escHtml(it.total_quantity);
-        const current = escHtml(it.current_quantity);
-        const imgSrc = it.qr_png_base64 ? ("data:image/png;base64," + it.qr_png_base64) : "";
+  const row = [
 
-        return `
-          <div class="card">
-            <div class="title">${name}</div>
-            <div class="sub">ID: ${id}　総数: ${total}　現在: ${current}</div>
-            <div class="qr">
-              ${imgSrc ? `<img src="${imgSrc}" alt="QR ${id}">` : `<div class="noqr">QRなし</div>`}
-            </div>
-          </div>
-        `;
-      }).join("");
+   it.id,
+   it.name,
+   it.total_quantity,
+   it.current_quantity,
+   it.created_at
 
-      return `<!doctype html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>QR一覧（印刷）</title>
-  <style>
-    @page { margin: 10mm; }
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; color: #111; margin: 0; padding: 0; }
-    header { position: sticky; top: 0; background: #fff; border-bottom: 1px solid #e5e7eb; padding: 10px 10px; }
-    .h1 { font-size: 15px; font-weight: 700; margin: 0; }
-    .meta { font-size: 11px; color: #374151; margin-top: 4px; line-height: 1.4; }
-    .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-    button { font: inherit; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; cursor: pointer; }
-    button:active { transform: translateY(1px); }
-    main { padding: 10px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
-    .card { border: 1px solid #d1d5db; border-radius: 4mm; padding: 4mm; break-inside: avoid; }
-    .title { font-size: 13px; font-weight: 700; margin-bottom: 2mm; }
-    .sub { font-size: 11px; color: #374151; margin-bottom: 3mm; }
-    .qr { display: grid; place-items: center; border: 1px dashed #d1d5db; border-radius: 3mm; padding: 3mm; }
-    img { width: 45mm; height: 45mm; image-rendering: pixelated; }
-    .noqr { font-size: 11px; color: #6b7280; }
-    .note { margin-top: 10px; font-size: 10px; color: #6b7280; line-height: 1.5; }
-    @media print {
-      header { position: static; border: none; }
-      .actions, .note { display: none; }
-      main { padding: 0; }
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <p class="h1">QR一覧（印刷）</p>
-    <div class="meta">出力日時：${escHtml(now)}　件数：${escHtml(items.length)}</div>
-    <div class="actions">
-      <button id="printBtn" type="button">印刷（PDF保存）</button>
-      <button id="closeBtn" type="button">閉じる</button>
-    </div>
-    <div class="note">
-      「印刷（PDF保存）」を押したあと、送信先（プリンター）を「PDFに保存」に変更して保存します。
-    </div>
-  </header>
+  ].map(csvEscape);
 
-  <main>
-    <div class="grid">
-      ${cardsHtml}
-    </div>
-  </main>
+  lines.push(row.join(","));
+ }
 
-  <script>
-    document.getElementById("printBtn").addEventListener("click", () => window.print());
-    document.getElementById("closeBtn").addEventListener("click", () => window.close());
-  <\/script>
-</body>
-</html>`;
-    }
+ return "\uFEFF" + lines.join("\r\n");
+}
 
-    function exportPdf() {
-      const items = currentItems;
-      if (!items || items.length === 0) return;
+function downloadCsv(){
 
-      const w = window.open("", "_blank");
-      if (!w) {
-        alert("ポップアップがブロックされました。アドレスバー付近の通知から許可して再実行してください。");
-        return;
-      }
+ const csv = buildCsv(currentItems);
 
-      const html = buildPrintHtml(items);
-      w.document.open();
-      w.document.write(html);
-      w.document.close();
-    }
+ const blob = new Blob([csv],{type:"text/csv;charset=utf-8;"});
 
-    $("reload").addEventListener("click", load);
-    $("q").addEventListener("input", applyFilter);
-    $("pdf").addEventListener("click", exportPdf);
+ const url = URL.createObjectURL(blob);
 
-    load();
-  </script>
+ const a = document.createElement("a");
+
+ a.href = url;
+
+ a.download = "qr_list.csv";
+
+ a.click();
+
+ URL.revokeObjectURL(url);
+}
+
+$("csv").onclick = downloadCsv;
+
+load();
+
+</script>
+
 </body>
 </html>
