@@ -1,4 +1,4 @@
-<!-- public/equipment-new.html（完全版：機材登録） -->
+<!-- public/equipment-new.html（完全版：機材登録（編集前PIN）） -->
 <!doctype html>
 <html lang="ja">
 <head>
@@ -47,10 +47,11 @@
     <div class="row">
       <a class="pill" href="/qr-list.html">QR一覧へ</a>
       <a class="pill" href="/qr-scan.html">QR読み取りへ</a>
+      <a class="pill" href="/">入口へ</a>
     </div>
     <div class="meta" style="margin-top:8px">
       入力して「登録」を押すと <code>POST /equipment</code> を呼び、機材を作成します。<br>
-      作成後、QR（機材IDのみ）が自動生成されます。
+      作成後、QR（機材IDのみ）が自動生成されます。登録は編集扱いのため、事前にパスワードを要求します。
     </div>
   </header>
 
@@ -70,8 +71,8 @@
       </div>
 
       <div class="small" style="margin-top:10px">
-        もし登録に失敗する場合は、まずサーバー起動を確認してください。<br>
-        ターミナルに <code>Server running on port 10000</code> が出ている必要があります。
+        登録前にパスワード入力を求めます（この端末では一定時間省略されます）。<br>
+        失敗する場合は、ターミナルに <code>Server running on port ...</code> が出ているか確認してください。
       </div>
     </div>
 
@@ -90,6 +91,7 @@
     </div>
   </main>
 
+  <script src="/admin-gate.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
 
@@ -115,14 +117,12 @@
     function getPayload() {
       const name = $("name").value.trim();
       const totalRaw = $("total").value;
-
       const total = Number(totalRaw);
 
       if (!name) return { error: "名を入力してください。" };
       if (!Number.isFinite(total) || !Number.isInteger(total) || total < 0) {
         return { error: "合計数量は 0 以上の整数で入力してください。" };
       }
-
       return { name, total_quantity: total };
     }
 
@@ -143,6 +143,13 @@
       const payload = getPayload();
       if (payload.error) {
         showErr(payload.error);
+        return;
+      }
+
+      // 編集前PIN（8458）
+      const ok = await window.requireAdminPin({ pin: "8458", ttlMinutes: 120 });
+      if (!ok) {
+        showErr("キャンセルしました。");
         return;
       }
 
@@ -187,8 +194,8 @@
           "登録に失敗しました。\n\n" +
           String(e && e.message ? e.message : e) +
           "\n\n確認:\n" +
-          "1) サーバーが起動している（Server running on port 10000）\n" +
-          "2) /equipment が存在する（server.js が最新版）"
+          "1) サーバーが起動している\n" +
+          "2) /equipment が存在する"
         );
       } finally {
         setBusy(false);
