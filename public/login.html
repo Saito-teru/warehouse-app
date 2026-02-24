@@ -1,102 +1,79 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ログイン</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <style>
-    body{
-      font-family:sans-serif;
-      background:#f0f0f0;
-      display:flex;
-      justify-content:center;
-      align-items:center;
-      height:100vh;
-      margin:0;
-    }
-    .box{
-      background:#fff;
-      padding:20px;
-      border-radius:8px;
-      width:320px;
-      box-shadow:0 2px 10px rgba(0,0,0,0.08);
-    }
-    h2{ margin:0 0 16px 0; }
-    label{ display:block; font-size:14px; margin:10px 0 6px; }
-    input{
-      width:100%;
-      padding:10px;
-      box-sizing:border-box;
-      border:1px solid #ccc;
-      border-radius:6px;
-    }
-    button{
-      width:100%;
-      padding:10px;
-      margin-top:14px;
-      border:0;
-      border-radius:6px;
-      cursor:pointer;
-      background:#1976d2;
-      color:#fff;
-      font-weight:bold;
-    }
-    button:hover{
-      background:#1565c0;
-    }
-    #error{
-      color:#c00;
-      margin-top:10px;
-      min-height:1em;
-      font-size:14px;
-    }
-  </style>
+  <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
 
-  <div class="box">
-    <h2>ログイン</h2>
+<div class="page">
+  <section class="panel" style="max-width:520px; margin: 40px auto;">
+    <h1 class="title" style="margin-bottom:14px;">ログイン</h1>
 
-    <label>Email</label>
-    <input id="email" value="admin@example.com" />
+    <label class="field" style="display:block; margin-bottom:12px;">
+      <span>メールアドレス</span>
+      <input id="email" type="email" placeholder="admin@example.com" style="width:100%;" />
+    </label>
 
-    <label>Password</label>
-    <input id="password" type="password" value="test1234" />
+    <button id="btnLogin" class="btn primary" style="width:100%;">ログイン</button>
 
-    <button id="loginBtn">ログイン</button>
+    <div id="msg" class="small" style="margin-top:10px; white-space:pre-wrap;"></div>
+  </section>
+</div>
 
-    <div id="error"></div>
-  </div>
+<script>
+(function () {
+  const emailEl = document.getElementById("email");
+  const btn = document.getElementById("btnLogin");
+  const msg = document.getElementById("msg");
 
-  <script>
-    async function login(){
-      const email=document.getElementById("email").value.trim();
-      const password=document.getElementById("password").value;
+  function setMsg(text, isError) {
+    msg.textContent = text || "";
+    msg.style.color = isError ? "red" : "green";
+  }
 
-      document.getElementById("error").innerText="";
+  async function login() {
+    setMsg("");
 
-      try{
-        const res=await fetch("/api/login",{
-          method:"POST",
-          headers:{ "Content-Type":"application/json" },
-          body:JSON.stringify({email,password})
-        });
-
-        const data=await res.json();
-
-        if(res.ok){
-          localStorage.setItem("token",data.token);
-          location.href="/dashboard.html";
-        }else{
-          document.getElementById("error").innerText=data.error||"ログイン失敗";
-        }
-      }catch(e){
-        document.getElementById("error").innerText="通信エラー";
-      }
+    const email = (emailEl.value || "").trim();
+    if (!email) {
+      setMsg("メールアドレスを入力してください。", true);
+      return;
     }
 
-    document.getElementById("loginBtn").onclick=login;
-  </script>
+    const res = await fetch("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email })
+    });
+
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (e) {}
+
+    if (!res.ok) {
+      const err = data && data.error ? data.error : text;
+      setMsg("ログインに失敗しました。\n" + err, true);
+      return;
+    }
+
+    if (!data || !data.token) {
+      setMsg("tokenが返ってきませんでした。/login の実装を確認してください。", true);
+      return;
+    }
+
+    localStorage.setItem("token", data.token);
+    setMsg("ログイン成功。移動します…", false);
+
+    // 次に使う画面へ
+    location.href = "/calendar.html";
+  }
+
+  btn.addEventListener("click", login);
+})();
+</script>
 
 </body>
 </html>

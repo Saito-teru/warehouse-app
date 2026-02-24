@@ -1,0 +1,4 @@
+/* public/css/style.css */
+/* 共通スタイル（最低限） */
+body { margin: 0; }
+button, input { font: inherit; }

@@ -1,0 +1,368 @@
+<!-- public/project-new.html（完全版：案件作成／日時プルダウン／複数日対応／発送・返却ボタン） -->
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>案件作成</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; margin:0; background:#f6f7f9; color:#111; }
+    header { position:sticky; top:0; background:#fff; border-bottom:1px solid #e5e7eb; padding:12px 14px; z-index:5; }
+    h1 { margin:0 0 8px 0; font-size:18px; }
+    a, button, input, select { font:inherit; }
+    a { color:inherit; text-decoration:none; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .pill { font-size:12px; padding:6px 10px; border-radius:999px; background:#f3f4f6; border:1px solid #e5e7eb; display:inline-block; }
+    main { padding:12px 14px; }
+    .panel { background:#fff; border:1px solid #e5e7eb; border-radius:14px; padding:12px; box-shadow:0 1px 2px rgba(0,0,0,0.04); margin-bottom:12px; }
+    label { display:block; font-size:12px; color:#374151; margin:10px 0 6px; }
+    input[type="text"], input[type="date"], select {
+      width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; box-sizing:border-box;
+    }
+    .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    button { padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; cursor:pointer; }
+    button:active { transform: translateY(1px); }
+    .btnPrimary { border-color:#111827; }
+    .meta { font-size:12px; color:#4b5563; line-height:1.6; }
+    .ok { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:12px; border-radius:12px; white-space:pre-wrap; }
+    .err { background:#fff; border:1px solid #fecaca; color:#991b1b; padding:12px; border-radius:12px; white-space:pre-wrap; }
+    .badge { font-size:12px; padding:4px 10px; border-radius:999px; border:1px solid #e5e7eb; background:#fff; }
+    .sDraft { color:#0ea5e9; border-color:#bae6fd; background:#f0f9ff; }     /* 水色 */
+    .sConf { color:#22c55e; border-color:#bbf7d0; background:#f0fdf4; }      /* 明るい緑 */
+    .sCanc { color:#ef4444; border-color:#fecaca; background:#fef2f2; }      /* 赤 */
+    .hr { height:1px; background:#e5e7eb; margin:12px 0; }
+    dialog { border:none; border-radius:14px; padding:0; width:min(92vw, 520px); }
+    dialog::backdrop { background: rgba(0,0,0,0.35); }
+    .dlg { padding:12px; }
+    .dlgHead { padding:12px; border-bottom:1px solid #e5e7eb; font-weight:700; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>案件作成</h1>
+    <div class="row">
+      <a class="pill" href="/">Home</a>
+      <a class="pill" href="/qr-list.html">QR一覧</a>
+      <a class="pill" href="/qr-scan.html">QR読み取り</a>
+    </div>
+    <div class="meta" style="margin-top:8px">
+      開始日時・終了日時は30分刻みのプルダウンです。複数日またぎにも対応します。<br>
+      「発送/返却」ボタンで、発送日と返却予定日を設定できます（不足判定に使う準備）。
+    </div>
+  </header>
+
+  <main>
+    <div class="panel">
+      <div class="meta">必須：案件名、開始日時、終了日時</div>
+
+      <label for="title">案件名</label>
+      <input id="title" type="text" placeholder="例：〇〇ホール配信" maxlength="200" />
+
+      <label for="client_name">クライアント（任意）</label>
+      <input id="client_name" type="text" placeholder="例：ABC制作" maxlength="200" />
+
+      <label for="venue">会場名（任意）</label>
+      <input id="venue" type="text" placeholder="例：〇〇ホール" maxlength="200" />
+
+      <label for="status">状態</label>
+      <select id="status">
+        <option value="draft">仮</option>
+        <option value="confirmed">確定</option>
+        <option value="cancelled">キャンセル</option>
+      </select>
+
+      <div class="hr"></div>
+
+      <label>開始日時</label>
+      <div class="grid2">
+        <input id="start_date" type="date" />
+        <select id="start_time"></select>
+      </div>
+
+      <label>終了日時</label>
+      <div class="grid2">
+        <input id="end_date" type="date" />
+        <select id="end_time"></select>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <button id="shipBtn" type="button">発送/返却</button>
+        <span id="shipBadge" class="badge">発送日：未設定 / 返却予定：未設定</span>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <button id="create" class="btnPrimary" type="button">案件を作成</button>
+        <button id="clear" type="button">入力クリア</button>
+      </div>
+
+      <div class="meta" style="margin-top:10px">
+        状態の色：仮＝水色、確定＝明るい緑、キャンセル＝赤（カレンダー側で反映します）。
+      </div>
+    </div>
+
+    <div id="msgOk" style="display:none" class="ok"></div>
+    <div id="msgErr" style="display:none" class="err"></div>
+
+    <div id="result" style="display:none" class="panel">
+      <div class="row" style="justify-content:space-between">
+        <div class="meta" style="font-weight:700">作成結果</div>
+        <span id="statusView" class="badge"></span>
+      </div>
+      <div id="resultText" class="meta" style="margin-top:8px; white-space:pre-wrap"></div>
+    </div>
+
+    <!-- 発送/返却設定ダイアログ -->
+    <dialog id="shipDlg">
+      <div class="dlgHead">発送日 / 返却予定日</div>
+      <div class="dlg">
+        <div class="meta">日付だけを設定します（時間は持ちません）。</div>
+
+        <label for="shipping_date">発送日</label>
+        <input id="shipping_date" type="date" />
+
+        <label for="return_due_date">返却予定日</label>
+        <input id="return_due_date" type="date" />
+
+        <div class="row" style="margin-top:12px">
+          <button id="shipSave" class="btnPrimary" type="button">保存</button>
+          <button id="shipClear" type="button">クリア</button>
+          <button id="shipClose" type="button">閉じる</button>
+        </div>
+
+        <div class="meta" style="margin-top:10px">
+          例：使用が当日でも、発送が前日・返却が翌日になるならここで設定します。
+        </div>
+      </div>
+    </dialog>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function pad2(n){ return String(n).padStart(2,'0'); }
+
+    function buildTimes() {
+      const selS = $("start_time");
+      const selE = $("end_time");
+      selS.innerHTML = "";
+      selE.innerHTML = "";
+      for (let h = 0; h < 24; h++) {
+        for (let m of [0, 30]) {
+          const v = `${pad2(h)}:${pad2(m)}`;
+          const o1 = document.createElement("option");
+          o1.value = v; o1.textContent = v;
+          const o2 = document.createElement("option");
+          o2.value = v; o2.textContent = v;
+          selS.appendChild(o1);
+          selE.appendChild(o2);
+        }
+      }
+    }
+
+    function todayStr() {
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = pad2(d.getMonth() + 1);
+      const day = pad2(d.getDate());
+      return `${y}-${m}-${day}`;
+    }
+
+    function showOk(text) {
+      $("msgErr").style.display = "none";
+      $("msgOk").style.display = "block";
+      $("msgOk").textContent = text;
+    }
+    function showErr(text) {
+      $("msgOk").style.display = "none";
+      $("msgErr").style.display = "block";
+      $("msgErr").textContent = text;
+    }
+    function clearMsgs() {
+      $("msgOk").style.display = "none";
+      $("msgErr").style.display = "none";
+      $("msgOk").textContent = "";
+      $("msgErr").textContent = "";
+    }
+
+    function setStatusBadge(el, status) {
+      el.className = "badge";
+      if (status === "draft") { el.classList.add("sDraft"); el.textContent = "仮"; }
+      else if (status === "confirmed") { el.classList.add("sConf"); el.textContent = "確定"; }
+      else if (status === "cancelled") { el.classList.add("sCanc"); el.textContent = "キャンセル"; }
+      else { el.textContent = status || "-"; }
+    }
+
+    function combineDateTime(dateStr, timeStr) {
+      // 入力された日付/時刻を「そのまま」ISO文字列にする（ローカル時間ベース）
+      // 例：2026-02-18 + 09:30 → 2026-02-18T09:30:00
+      return `${dateStr}T${timeStr}:00`;
+    }
+
+    // 発送/返却（内部保持）
+    let shippingDate = null;
+    let returnDueDate = null;
+
+    function refreshShipBadge() {
+      const s = shippingDate ? shippingDate : "未設定";
+      const r = returnDueDate ? returnDueDate : "未設定";
+      $("shipBadge").textContent = `発送日：${s} / 返却予定：${r}`;
+    }
+
+    function validate() {
+      const title = $("title").value.trim();
+      const status = $("status").value;
+
+      const sd = $("start_date").value;
+      const st = $("start_time").value;
+      const ed = $("end_date").value;
+      const et = $("end_time").value;
+
+      if (!title) return { error: "案件名を入力してください。" };
+      if (!sd || !st) return { error: "開始日時を入力してください。" };
+      if (!ed || !et) return { error: "終了日時を入力してください。" };
+
+      const startIso = combineDateTime(sd, st);
+      const endIso = combineDateTime(ed, et);
+
+      const start = new Date(startIso);
+      const end = new Date(endIso);
+
+      if (!(start instanceof Date) || isNaN(start)) return { error: "開始日時が不正です。" };
+      if (!(end instanceof Date) || isNaN(end)) return { error: "終了日時が不正です。" };
+      if (end <= start) return { error: "終了日時は開始日時より後にしてください。" };
+
+      return {
+        title,
+        client_name: $("client_name").value.trim() || null,
+        venue: $("venue").value.trim() || null,
+        status: status || "draft",
+        usage_start_at: startIso,
+        usage_end_at: endIso,
+        shipping_date: shippingDate,
+        return_due_date: returnDueDate
+      };
+    }
+
+    function setBusy(isBusy) {
+      $("create").disabled = isBusy;
+      $("clear").disabled = isBusy;
+      $("shipBtn").disabled = isBusy;
+      $("create").textContent = isBusy ? "作成中…" : "案件を作成";
+    }
+
+    async function createProject() {
+      clearMsgs();
+      $("result").style.display = "none";
+
+      const payload = validate();
+      if (payload.error) {
+        showErr(payload.error);
+        return;
+      }
+
+      setBusy(true);
+      try {
+        const res = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const text = await res.text();
+        let json = null;
+        try { json = JSON.parse(text); } catch (_) {}
+
+        if (!res.ok) {
+          const detail = json ? JSON.stringify(json, null, 2) : text;
+          throw new Error("HTTP " + res.status + "\n" + detail);
+        }
+
+        showOk("案件を作成しました。");
+
+        $("result").style.display = "block";
+        setStatusBadge($("statusView"), json.status);
+
+        $("resultText").textContent =
+          `ID: ${json.id}\n` +
+          `案件名: ${json.title}\n` +
+          `クライアント: ${json.client_name ?? "-"}\n` +
+          `会場名: ${json.venue ?? "-"}\n` +
+          `開始日時: ${json.usage_start_at}\n` +
+          `終了日時: ${json.usage_end_at}\n` +
+          `発送日: ${json.shipping_date ?? "-"}\n` +
+          `返却予定: ${json.return_due_date ?? "-"}\n`;
+
+      } catch (e) {
+        showErr(
+          "案件作成に失敗しました。\n\n" +
+          String(e && e.message ? e.message : e) +
+          "\n\n確認:\n" +
+          "1) サーバー起動（Server running on port ...）\n" +
+          "2) /api/projects が有効\n"
+        );
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function clearForm() {
+      $("title").value = "";
+      $("client_name").value = "";
+      $("venue").value = "";
+      $("status").value = "draft";
+
+      const t = todayStr();
+      $("start_date").value = t;
+      $("end_date").value = t;
+      $("start_time").value = "09:00";
+      $("end_time").value = "18:00";
+
+      shippingDate = null;
+      returnDueDate = null;
+      $("shipping_date").value = "";
+      $("return_due_date").value = "";
+      refreshShipBadge();
+
+      clearMsgs();
+      $("result").style.display = "none";
+      $("title").focus();
+    }
+
+    // 発送/返却ダイアログ
+    function openShipDlg() {
+      $("shipping_date").value = shippingDate || "";
+      $("return_due_date").value = returnDueDate || "";
+      $("shipDlg").showModal();
+    }
+    function closeShipDlg() {
+      $("shipDlg").close();
+    }
+
+    function shipSave() {
+      shippingDate = $("shipping_date").value || null;
+      returnDueDate = $("return_due_date").value || null;
+      refreshShipBadge();
+      closeShipDlg();
+    }
+    function shipClear() {
+      shippingDate = null;
+      returnDueDate = null;
+      $("shipping_date").value = "";
+      $("return_due_date").value = "";
+      refreshShipBadge();
+    }
+
+    // init
+    buildTimes();
+    clearForm();
+
+    $("create").addEventListener("click", createProject);
+    $("clear").addEventListener("click", clearForm);
+
+    $("shipBtn").addEventListener("click", openShipDlg);
+    $("shipSave").addEventListener("click", shipSave);
+    $("shipClear").addEventListener("click", shipClear);
+    $("shipClose").addEventListener("click", closeShipDlg);
+  </script>
+</body>
+</html>
