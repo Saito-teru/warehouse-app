@@ -1,4 +1,333 @@
-/* public/css/style.css */
-/* 共通スタイル（最低限） */
-body { margin: 0; }
-button, input { font: inherit; }
+/* ===========================
+   calendar.css（完全置き換え）
+   条件:
+   ・案件上辺=実線
+   ・時間横=実線
+   ・30分線=点線
+   ・二重線なし
+   ・縦スクロールなし
+   ・案件ボックスはグリッド内に収める
+   =========================== */
+
+:root{
+  --cell-h: 28px;         /* 30分=1マスの高さ */
+  --grid-border: #e5e7eb; /* 外枠/縦線 */
+  --line-hour: #9ca3af;   /* 1時間ごとの実線 */
+  --line-half: #e5e7eb;   /* 30分の点線 */
+  --text-muted: #6b7280;
+  --text-main: #111827;
+}
+
+/* カレンダー枠 */
+#gridRoot{
+  border: 1px solid var(--grid-border);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+/* ===== 上部（タイトル + モード/日付） ===== */
+.cal-topbar{
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:8px;
+  margin-bottom:8px;
+}
+.cal-title{ font-size:18px; margin:0; }
+
+.cal-controls{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.cal-mode-btn{
+  border:0;
+  background:transparent;
+  color:var(--text-main);
+  font-weight:600;
+  font-size:17px;
+  padding:10px 10px;
+  border-radius:12px;
+  cursor:pointer;
+}
+.cal-mode-btn.is-active{
+  background:#2563eb;
+  color:#fff;
+  font-size:17px;
+  padding:10px 14px;
+  border-radius:12px;
+}
+
+.cal-date{
+  padding:10px 12px;
+  border:1px solid var(--grid-border);
+  border-radius:10px;
+}
+
+.cal-range{ display:none; }
+
+/* ===== ナビ行（戻る / 新規作成 / 進む） ===== */
+.cal-nav-row{
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  align-items:center;
+  width:100%;
+  margin:6px 0 10px;
+  gap:12px;
+}
+#prevBtn{ justify-self:start; }
+#nextBtn{ justify-self:end; }
+
+.cal-nav-mid{
+  justify-self:center;
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.cal-nav-btn{
+  width:180px;
+  max-width:45vw;
+  padding:12px 14px;
+  border:1px solid var(--grid-border);
+  background:#fff;
+  color:var(--text-main);
+  border-radius:10px;
+  cursor:pointer;
+  font-weight:700;
+  font-size:19px;
+}
+.cal-nav-btn:hover{ filter:brightness(0.98); }
+
+.cal-error{
+  color:#b91c1c;
+  min-height:18px;
+  margin:0;
+}
+.cal-error--center{ text-align:center; }
+
+/* ===== グリッド全体 ===== */
+.cal-grid-shell{
+  display:grid;
+  grid-template-columns:72px 1fr;
+  grid-template-rows:auto 1fr;
+  border-top:1px solid var(--grid-border);
+}
+
+/* 左上の空き */
+.cal-corner{
+  grid-column:1;
+  grid-row:1;
+  border-right:1px solid var(--grid-border);
+  border-bottom:1px solid var(--grid-border);
+  background:#fff;
+  position:sticky;
+  top:0;
+  left:0;
+  z-index:6;
+}
+
+/* 日付ヘッダー */
+.cal-days-header{
+  grid-column:2;
+  grid-row:1;
+  display:grid;
+  grid-auto-flow:column;
+  grid-auto-columns:minmax(160px,1fr);
+  border-bottom:1px solid var(--grid-border);
+  background:#fff;
+  position:sticky;
+  top:0;
+  z-index:5;
+  overflow:hidden;
+}
+
+.cal-day-head{
+  padding:10px 8px;
+  border-left:1px solid var(--grid-border);
+  font-size:14.4px;
+  font-weight:700;
+  color:var(--text-main);
+  white-space:nowrap;
+}
+.cal-day-head.is-sat{ background:#eaf3ff; }
+.cal-day-head.is-sun{ background:#ffecec; }
+
+/* ===== 本体行（時間列 + 日列） ===== */
+/* ★縦スクロールを発生させない（48マスをそのまま表示） */
+.cal-time-col,
+.cal-days-body{
+  height: calc(var(--cell-h) * 48);
+}
+
+/* 時刻列 */
+.cal-time-col{
+  grid-column:1;
+  grid-row:2;
+  border-right:1px solid var(--grid-border);
+  background:#fff;
+  overflow:hidden; /* 縦スクロールさせない */
+}
+
+.cal-time-slot{
+  height:var(--cell-h);
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  padding-right:10px;
+  font-size:12px;
+  color:var(--text-muted);
+  border-bottom:1px dashed var(--line-half); /* 30分は点線 */
+}
+
+/* 1時間ごと: ラベル強調 + 下線を実線 */
+.cal-time-slot.is-hour{
+  color:var(--text-main);
+  font-weight:700;
+  border-bottom:1px solid var(--line-hour); /* 1時間は実線 */
+}
+
+/* 時間表示の横に「実線」の目印 */
+.cal-time-slot.is-hour::after{
+  content:"";
+  display:block;
+  width:18px;
+  height:0;
+  border-top:2px solid var(--line-hour); /* ここは必ず実線 */
+  margin-left:8px;
+}
+
+/* 日側の横スクロールは許可、縦スクロールは禁止 */
+.cal-days-body{
+  grid-column:2;
+  grid-row:2;
+  overflow-x:auto;
+  overflow-y:hidden; /* ★縦スクロール禁止 */
+}
+
+.cal-days-grid{
+  display:grid;
+  grid-auto-flow:column;
+  grid-auto-columns:minmax(160px,1fr);
+  position:relative;
+}
+
+/* 日ごとの列 */
+.cal-day-col{
+  position:relative;
+  border-left:1px solid var(--grid-border);
+  min-height: calc(var(--cell-h) * 48);
+  height: calc(var(--cell-h) * 48);
+  overflow:hidden; /* ★案件が列外へはみ出さない */
+  box-sizing:border-box;
+}
+
+.cal-day-col.is-sat{ background:#f6fbff; }
+.cal-day-col.is-sun{ background:#fff7f7; }
+
+/* 30分線 = 点線（これが基本） */
+.cal-slot-line{
+  height:var(--cell-h);
+  box-sizing:border-box;
+  border-bottom:1px dashed var(--line-half);
+}
+
+/* 1時間線 = 実線（★案件の上辺を必ず実線にできる） */
+.cal-slot-line.hour{
+  border-bottom:1px solid var(--line-hour);
+}
+
+/* ===== 案件ブロック ===== */
+.cal-project{
+  position:absolute;
+  border-radius:10px;
+  padding:6px 8px;
+  font-size:12px;
+  line-height:1.2;
+  cursor:pointer;
+  box-shadow:0 2px 8px rgba(0,0,0,0.08);
+  overflow:hidden;
+  box-sizing:border-box;
+  color:var(--text-main);
+  font-weight:700;
+
+  /* はみ出し対策 */
+  max-width:100%;
+}
+
+/* 状態色（薄め） */
+.cal-project.draft{ background:#93c5fd; }
+.cal-project.confirmed{ background:#86efac; }
+.cal-project.cancelled{ background:#fca5a5; }
+
+/* 不足: 赤枠（内側） */
+.cal-project.cal-project--shortage{
+  box-shadow:
+    0 2px 8px rgba(0,0,0,0.08),
+    0 0 0 5px #dc2626 inset;
+}
+
+/* 任意の色（12色） */
+.cal-project.cal-color--1  { background:#fecaca; }
+.cal-project.cal-color--2  { background:#fed7aa; }
+.cal-project.cal-color--3  { background:#fef3c7; }
+.cal-project.cal-color--4  { background:#d9f99d; }
+.cal-project.cal-color--5  { background:#bbf7d0; }
+.cal-project.cal-color--6  { background:#a7f3d0; }
+.cal-project.cal-color--7  { background:#99f6e4; }
+.cal-project.cal-color--8  { background:#a5f3fc; }
+.cal-project.cal-color--9  { background:#bae6fd; }
+.cal-project.cal-color--10 { background:#c7d2fe; }
+.cal-project.cal-color--11 { background:#e9d5ff; }
+.cal-project.cal-color--12 { background:#fbcfe8; }
+
+/* ===== モーダル（将来用） ===== */
+.cal-modal-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.35);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  z-index:50;
+}
+.cal-modal-overlay.is-open{ display:flex; }
+
+.cal-modal{
+  width:min(520px,100%);
+  background:#fff;
+  border-radius:14px;
+  padding:14px;
+  border:1px solid var(--grid-border);
+}
+.cal-modal-title{
+  font-size:16px;
+  font-weight:800;
+  margin-bottom:12px;
+}
+.cal-modal-actions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.cal-modal-btn{
+  border:1px solid var(--grid-border);
+  background:#fff;
+  color:var(--text-main);
+  border-radius:10px;
+  padding:10px 12px;
+  cursor:pointer;
+  font-weight:800;
+}
+.cal-modal-btn--primary{
+  background:#2563eb;
+  color:#fff;
+  border-color:#2563eb;
+}

@@ -92,3 +92,9 @@ CREATE INDEX IF NOT EXISTS idx_project_items_project   ON project_items (project
 CREATE INDEX IF NOT EXISTS idx_project_items_equipment ON project_items (equipment_id);
 
 COMMIT;
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_schema='public'
+  AND table_name='projects'
+ORDER BY column_name;
+

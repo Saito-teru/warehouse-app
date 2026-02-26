@@ -1,482 +1,452 @@
-// public/js/calendar.js（完全置換）
-// JST固定表示（PCローカル非依存）・日跨ぎ分割・重なり横並び・status色・color_key・不足赤枠
-// 例外は必ず #errorText に表示して、描画停止の原因を見える化する
-
 (() => {
   "use strict";
 
-  const JST_MS = 9 * 60 * 60 * 1000;
-  const DAY_MS = 24 * 60 * 60 * 1000;
+  // ====== 設定 ======
+  const TZ = "Asia/Tokyo";
+  const DAY_MIN = 1440;
+  const SLOT_MIN = 30;
 
-  // ===== 基本 =====
-  const pad2 = (n) => String(n).padStart(2, "0");
-  const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+  // ★ 追加：列の左右に必ず入れる余白(px)
+  const GUTTER_PX = 4;
 
-  function qs(name) {
-    return new URL(location.href).searchParams.get(name);
-  }
-  function setQs(name, value) {
-    const u = new URL(location.href);
-    u.searchParams.set(name, value);
-    history.replaceState(null, "", u.toString());
+  // ====== DOM ======
+  const daysHeader = document.getElementById("daysHeader");
+  const timeCol = document.getElementById("timeCol");
+  const daysGrid = document.getElementById("daysGrid");
+  const errorText = document.getElementById("errorText");
+
+  const modeBtns = {
+    day: document.getElementById("modeDay"),
+    week: document.getElementById("modeWeek"),
+    "2week": document.getElementById("mode2Week"),
+    month: document.getElementById("modeMonth"),
+  };
+
+  const datePicker = document.getElementById("datePicker");
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  const newBtn = document.getElementById("newBtn");
+
+  if (!daysHeader || !timeCol || !daysGrid) {
+    console.error("[calendar.js] required containers not found (#daysHeader/#timeCol/#daysGrid)");
+    return;
   }
 
   function showError(msg) {
-    const el = document.getElementById("errorText");
-    if (el) el.textContent = msg || "";
-  }
-  function clearError() {
-    showError("");
+    if (errorText) errorText.textContent = msg || "";
   }
 
-  function escapeHtml(s) {
-    return String(s ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
+  // ====== URL params ======
+  const qp = new URLSearchParams(location.search);
+  const mode = (qp.get("mode") || "week").toLowerCase(); // day/week/2week/month
+  const baseDateStr = qp.get("date"); // YYYY-MM-DD (JST)
 
-  function getCellHeightPx() {
-    const v = getComputedStyle(document.documentElement).getPropertyValue("--cell-h").trim();
-    const n = Number(String(v).replace("px", ""));
-    return Number.isFinite(n) && n > 0 ? n : 28;
-  }
+  // ====== JST formatter ======
+  const dtfYMD = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
 
-  function setActiveMode(mode) {
-    for (const id of ["modeDay", "modeWeek", "mode2Week", "modeMonth"]) {
-      const btn = document.getElementById(id);
-      if (!btn) continue;
-      btn.classList.toggle("is-active", btn.getAttribute("data-mode") === mode);
-    }
-  }
+  const dtfYMDHM = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
 
-  // ===== 認証/通信 =====
-  function getToken() {
-    const keys = ["token", "jwt", "authToken", "access_token"];
-    for (const k of keys) {
-      const v = localStorage.getItem(k);
-      if (v && String(v).trim()) return String(v).trim().replace(/^Bearer\s+/i, "");
-    }
-    return null;
-  }
-
-  async function apiJson(url) {
-    const token = getToken();
-    const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-    const text = await res.text();
-    let data;
-    try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-    if (!res.ok) {
-      const msg = (data && (data.error || data.message)) ? (data.error || data.message) : `HTTP ${res.status}`;
-      throw new Error(msg);
-    }
-    return data;
-  }
-
-  // ===== JST(日付境界) を UTCms で扱うための関数群 =====
-  // JSTの 00:00 を UTCms で表す
-  function jstMidnightUtcMs(y, m, d) {
-    // JST 00:00 = UTC 前日 15:00
-    return Date.UTC(y, m - 1, d, 0, 0, 0, 0) - JST_MS;
-  }
-
-  // UTCms → JST年月日（UTC getter で読むために +9h してから UTC getter）
-  function ymdFromUtcMsAsJst(ms) {
-    const j = new Date(ms + JST_MS);
+  function partsFromDateInJst(dateObj, withTime) {
+    const parts = (withTime ? dtfYMDHM : dtfYMD).formatToParts(dateObj);
+    const m = Object.create(null);
+    for (const p of parts) if (p.type !== "literal") m[p.type] = p.value;
     return {
-      y: j.getUTCFullYear(),
-      m: j.getUTCMonth() + 1,
-      d: j.getUTCDate(),
-      wd: j.getUTCDay(), // 0=日
+      y: Number(m.year),
+      mo: Number(m.month),
+      d: Number(m.day),
+      hh: withTime ? Number(m.hour) : 0,
+      mm: withTime ? Number(m.minute) : 0,
     };
   }
 
-  function dayKeyFromDayStartMs(dayStartMs) {
-    const p = ymdFromUtcMsAsJst(dayStartMs);
-    return `${p.y}-${pad2(p.m)}-${pad2(p.d)}`;
+  function pad2(n) {
+    return String(n).padStart(2, "0");
   }
 
-  function weekdayJaFromDayStartMs(dayStartMs) {
-    const p = ymdFromUtcMsAsJst(dayStartMs);
-    return ["日", "月", "火", "水", "木", "金", "土"][p.wd];
+  function toDayKey(y, mo, d) {
+    return `${y}-${pad2(mo)}-${pad2(d)}`;
   }
 
-  // 任意のUTC Date → その日のJST 00:00 を UTCms で返す
-  function startOfJstDayFromUtcDate(dUtc) {
-    const ms = dUtc.getTime();
-    const p = ymdFromUtcMsAsJst(ms);
-    return jstMidnightUtcMs(p.y, p.m, p.d);
+  function jstDayKeyFromUtcMs(utcMs) {
+    const p = partsFromDateInJst(new Date(utcMs), false);
+    return toDayKey(p.y, p.mo, p.d);
   }
 
-  function startOfJstWeekFromAnchorMs(anchorMs) {
-    const day0 = startOfJstDayFromUtcDate(new Date(anchorMs));
-    const wd = ymdFromUtcMsAsJst(day0).wd; // 0=日
-    return day0 - wd * DAY_MS;
+  function jstTodayKey() {
+    return jstDayKeyFromUtcMs(Date.now());
   }
 
-  function startOfJstMonthFromAnchorMs(anchorMs) {
-    const p = ymdFromUtcMsAsJst(anchorMs);
-    return jstMidnightUtcMs(p.y, p.m, 1);
+  // JSTの00:00をUTC msに変換（JST=UTC+9）
+  function jstMidnightUtcMs(dayKey) {
+    const [y, mo, d] = dayKey.split("-").map(Number);
+    return Date.UTC(y, mo - 1, d, -9, 0, 0, 0);
   }
 
-  function computeRange(anchorMs, mode) {
-    if (mode === "day") return { startMs: startOfJstDayFromUtcDate(new Date(anchorMs)), days: 1 };
-    if (mode === "week") return { startMs: startOfJstWeekFromAnchorMs(anchorMs), days: 7 };
-    if (mode === "2week") return { startMs: startOfJstWeekFromAnchorMs(anchorMs), days: 14 };
-
-    const s = startOfJstMonthFromAnchorMs(anchorMs);
-    const p = ymdFromUtcMsAsJst(s);
-    const next = (p.m === 12) ? { y: p.y + 1, m: 1, d: 1 } : { y: p.y, m: p.m + 1, d: 1 };
-    const nextMs = jstMidnightUtcMs(next.y, next.m, next.d);
-    const days = Math.round((nextMs - s) / DAY_MS);
-    return { startMs: s, days };
+  function addJstDays(dayKey, deltaDays) {
+    const ms = jstMidnightUtcMs(dayKey) + deltaDays * 86400000;
+    return jstDayKeyFromUtcMs(ms);
   }
 
-  function isoDateForPickerFromAnchorMs(anchorMs) {
-    const p = ymdFromUtcMsAsJst(anchorMs);
-    return `${p.y}-${pad2(p.m)}-${pad2(p.d)}`;
+  function weekdayIndexInJstFromDayKey(dayKey) {
+    return new Date(jstMidnightUtcMs(dayKey)).getUTCDay(); // 0=Sun..6=Sat
   }
 
-  function syncDateParamToUrl(anchorMs) {
-    const p = ymdFromUtcMsAsJst(anchorMs);
-    setQs("date", `${p.y}-${pad2(p.m)}-${pad2(p.d)}`);
+  function startOfWeekMonday(dayKey) {
+    const w = weekdayIndexInJstFromDayKey(dayKey);
+    const diff = (w === 0 ? -6 : 1 - w);
+    return addJstDays(dayKey, diff);
   }
 
-  function anchorFromUrlOrNow() {
-    const dateQs = qs("date");
-    if (dateQs && /^\d{4}-\d{2}-\d{2}$/.test(dateQs)) {
-      const [y, m, d] = dateQs.split("-").map(Number);
-      if ([y, m, d].every(Number.isFinite)) return jstMidnightUtcMs(y, m, d);
+  function getRangeDays(modeName, baseKey) {
+    if (modeName === "day") return [baseKey];
+
+    const startKey = startOfWeekMonday(baseKey);
+
+    if (modeName === "2week" || modeName === "2weeks") {
+      return Array.from({ length: 14 }, (_, i) => addJstDays(startKey, i));
     }
-    // 今の時刻 → JST日付へ丸め
-    return startOfJstDayFromUtcDate(new Date());
+
+    if (modeName === "month") {
+      const [y, mo] = baseKey.split("-").map(Number);
+      const first = `${y}-${pad2(mo)}-01`;
+      const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+      return Array.from({ length: daysInMonth }, (_, i) => addJstDays(first, i));
+    }
+
+    return Array.from({ length: 7 }, (_, i) => addJstDays(startKey, i));
   }
 
-  // ===== UI構築 =====
-  function buildTimeColumn() {
-    const timeCol = document.getElementById("timeCol");
-    if (!timeCol) return;
-    timeCol.innerHTML = "";
-    const cellH = getCellHeightPx();
-    for (let i = 0; i < 48; i++) {
-      const h = Math.floor(i / 2);
-      const mm = (i % 2 === 0) ? "00" : "30";
-      const div = document.createElement("div");
-      div.className = "cal-time-slot";
-      div.style.height = `${cellH}px`;
-      div.textContent = `${pad2(h)}:${mm}`;
-      timeCol.appendChild(div);
+  function jstHmFromUtcDate(dateObjUtc) {
+    const p = partsFromDateInJst(dateObjUtc, true);
+    return { hh: p.hh, mm: p.mm };
+  }
+
+  function minutesFromJstHm(hh, mm) {
+    return hh * 60 + mm;
+  }
+
+  function clamp(n, min, max) {
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function clearChildren(el) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+  }
+
+  // ====== UI構築 ======
+  function buildTimeCol() {
+    clearChildren(timeCol);
+    for (let m = 0; m < DAY_MIN; m += SLOT_MIN) {
+      const slot = document.createElement("div");
+      slot.className = "cal-time-slot";
+      if (m % 60 === 0) {
+        slot.classList.add("is-hour");
+        const hh = Math.floor(m / 60);
+        slot.textContent = `${pad2(hh)}:00`;
+      } else {
+        slot.textContent = "";
+      }
+      timeCol.appendChild(slot);
     }
   }
 
-  function buildGridShell(startMs, days) {
-    const daysHeader = document.getElementById("daysHeader");
-    const daysGrid = document.getElementById("daysGrid");
-    if (!daysHeader || !daysGrid) return;
-
-    daysHeader.innerHTML = "";
-    daysGrid.innerHTML = "";
-    const cellH = getCellHeightPx();
-
-    for (let i = 0; i < days; i++) {
-      const dayStartMs = startMs + i * DAY_MS;
-      const p = ymdFromUtcMsAsJst(dayStartMs);
-      const w = weekdayJaFromDayStartMs(dayStartMs);
-      const dayKey = `${p.y}-${pad2(p.m)}-${pad2(p.d)}`;
+  function buildDaysHeader(days) {
+    clearChildren(daysHeader);
+    for (const dayKey of days) {
+      const [y, mo, d] = dayKey.split("-").map(Number);
+      const w = weekdayIndexInJstFromDayKey(dayKey);
+      const wd = ["日", "月", "火", "水", "木", "金", "土"][w];
 
       const head = document.createElement("div");
       head.className = "cal-day-head";
-      if (w === "土") head.classList.add("is-sat");
-      if (w === "日") head.classList.add("is-sun");
-      head.textContent = `${p.m}/${p.d}（${w}）`;
+      if (w === 6) head.classList.add("is-sat");
+      if (w === 0) head.classList.add("is-sun");
+      head.textContent = `${mo}/${d}(${wd})`;
       daysHeader.appendChild(head);
+    }
+  }
 
+  function buildDaysGrid(days) {
+    clearChildren(daysGrid);
+    for (const dayKey of days) {
       const col = document.createElement("div");
       col.className = "cal-day-col";
-      if (w === "土") col.classList.add("is-sat");
-      if (w === "日") col.classList.add("is-sun");
-      col.dataset.date = dayKey;
+      col.dataset.day = dayKey;
 
-      for (let j = 0; j < 48; j++) {
+      const w = weekdayIndexInJstFromDayKey(dayKey);
+      if (w === 6) col.classList.add("is-sat");
+      if (w === 0) col.classList.add("is-sun");
+
+      for (let m = 0; m < DAY_MIN; m += SLOT_MIN) {
         const line = document.createElement("div");
         line.className = "cal-slot-line";
-        line.style.height = `${cellH}px`;
-        if (j % 2 === 0) line.classList.add("hour");
+        if (m % 60 === 0) line.classList.add("hour");
         col.appendChild(line);
       }
       daysGrid.appendChild(col);
     }
   }
 
-  // ===== 重なり横並び =====
-  function layoutOverlaps(entries) {
-    const sorted = entries.slice().sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
-
-    const clusters = [];
-    let cur = [];
-    let curEnd = -1;
-
-    for (const e of sorted) {
-      if (cur.length === 0) { cur = [e]; curEnd = e.endMin; continue; }
-      if (e.startMin < curEnd) { cur.push(e); curEnd = Math.max(curEnd, e.endMin); }
-      else { clusters.push(cur); cur = [e]; curEnd = e.endMin; }
+  function setActiveModeBtn(m) {
+    for (const k of Object.keys(modeBtns)) {
+      const b = modeBtns[k];
+      if (!b) continue;
+      b.classList.toggle("is-active", k === m);
     }
-    if (cur.length) clusters.push(cur);
+  }
 
-    const laid = [];
-    for (const cluster of clusters) {
-      const used = new Set();
-      const active = [];
-      let maxCols = 0;
+  function navigateTo(newMode, newDateKey) {
+    const u = new URL(location.href);
+    u.searchParams.set("mode", newMode);
+    u.searchParams.set("date", newDateKey);
+    location.href = u.pathname + "?" + u.searchParams.toString();
+  }
 
-      const items = cluster.slice().sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
-      for (const it of items) {
-        for (let i = active.length - 1; i >= 0; i--) {
-          if (active[i].endMin <= it.startMin) {
-            used.delete(active[i].colIndex);
-            active.splice(i, 1);
+  // ====== API ======
+  async function fetchProjects() {
+    const res = await fetch("/api/projects", { headers: { Accept: "application/json" } });
+    const text = await res.text();
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch {}
+
+    if (!res.ok) {
+      const msg = (json && (json.error || json.message)) || text || `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+
+    return Array.isArray(json) ? json : (json && json.value) ? json.value : (json && json.projects) ? json.projects : [];
+  }
+
+  // ====== 重なりレイアウト ======
+  function layoutOverlaps(segs) {
+    const active = [];
+    const result = [];
+
+    let cluster = [];
+    let clusterMaxEnd = -1;
+
+    function flushCluster() {
+      if (!cluster.length) return;
+      let colCount = 1;
+      for (const r of cluster) colCount = Math.max(colCount, r.colIndex + 1);
+      for (const r of cluster) r.colCount = colCount;
+      cluster = [];
+      clusterMaxEnd = -1;
+    }
+
+    for (const s of segs) {
+      for (let i = active.length - 1; i >= 0; i--) {
+        if (active[i].endMin <= s.startMin) active.splice(i, 1);
+      }
+      const used = new Set(active.map((a) => a.colIndex));
+      let colIndex = 0;
+      while (used.has(colIndex)) colIndex++;
+
+      const placed = { ...s, colIndex, colCount: 1 };
+      active.push({ endMin: s.endMin, colIndex });
+
+      if (!cluster.length) {
+        clusterMaxEnd = s.endMin;
+      } else {
+        if (s.startMin >= clusterMaxEnd) {
+          flushCluster();
+          clusterMaxEnd = s.endMin;
+        } else {
+          clusterMaxEnd = Math.max(clusterMaxEnd, s.endMin);
+        }
+      }
+      cluster.push(placed);
+      result.push(placed);
+    }
+    flushCluster();
+    return result;
+  }
+
+  // ====== 描画 ======
+  function clearProjectBlocks() {
+    document.querySelectorAll(".cal-project").forEach((el) => el.remove());
+  }
+
+  function renderProjects(projects, visibleDays) {
+    clearProjectBlocks();
+    const visibleSet = new Set(visibleDays);
+    const segmentsByDay = new Map();
+
+    for (const p of projects) {
+      const id = p.id;
+      const title = p.title || "(no title)";
+      const status = p.status || "draft";
+
+      const shortage =
+        Boolean(p.shortage) ||
+        Boolean(p.is_shortage) ||
+        Boolean(p.stock_shortage) ||
+        (typeof p.shortage_count === "number" && p.shortage_count > 0);
+
+      const startIso = p.usage_start_at || p.usage_start;
+      const endIso = p.usage_end_at || p.usage_end;
+      if (!startIso || !endIso) continue;
+
+      const startUtc = new Date(startIso);
+      const endUtc = new Date(endIso);
+      if (Number.isNaN(startUtc.getTime()) || Number.isNaN(endUtc.getTime())) continue;
+
+      const startDayKey = jstDayKeyFromUtcMs(startUtc.getTime());
+      const endDayKey = jstDayKeyFromUtcMs(endUtc.getTime());
+
+      const startHm = jstHmFromUtcDate(startUtc);
+      const endHm = jstHmFromUtcDate(endUtc);
+
+      let startMin = minutesFromJstHm(startHm.hh, startHm.mm);
+      let endMin = minutesFromJstHm(endHm.hh, endHm.mm);
+
+      if (startDayKey === endDayKey && endMin <= startMin) {
+        endMin = clamp(startMin + SLOT_MIN, 0, DAY_MIN);
+      }
+
+      let dayKey = startDayKey;
+      while (true) {
+        const isFirst = dayKey === startDayKey;
+        const isLast = dayKey === endDayKey;
+
+        const segStart = isFirst ? startMin : 0;
+        const segEnd = isLast ? endMin : DAY_MIN;
+
+        if (visibleSet.has(dayKey)) {
+          const seg = {
+            id,
+            title,
+            status,
+            shortage,
+            dayKey,
+            startMin: clamp(segStart, 0, DAY_MIN),
+            endMin: clamp(segEnd, 0, DAY_MIN),
+            color_key: p.color_key || null,
+          };
+          if (seg.endMin > seg.startMin) {
+            if (!segmentsByDay.has(dayKey)) segmentsByDay.set(dayKey, []);
+            segmentsByDay.get(dayKey).push(seg);
           }
         }
-        let col = 0; while (used.has(col)) col++;
-        used.add(col);
-        it.colIndex = col;
-        active.push({ endMin: it.endMin, colIndex: col });
-        maxCols = Math.max(maxCols, used.size);
-      }
-      for (const it of items) { it.colCount = maxCols; laid.push(it); }
-    }
-    return laid;
-  }
 
-  // ===== 不足判定 =====
-  async function buildShortageIdSet(projects) {
-    const set = new Set();
-    for (const p of projects) {
-      try {
-        const r = await apiJson(`/api/shortages?project_id=${encodeURIComponent(String(p.id))}`);
-        const list = Array.isArray(r) ? r : (r && r.shortages ? r.shortages : []);
-        const has = Array.isArray(list) && list.some(x => Number(x.shortage) > 0);
-        if (has) set.add(String(p.id));
-      } catch {}
-    }
-    return set;
-  }
-
-  // ===== 描画 =====
-  function clearRenderedBlocks() {
-    document.querySelectorAll(".cal-project").forEach(el => el.remove());
-  }
-
-  function renderProjects(projects, rangeStartMs, days, shortageIdSet) {
-    clearRenderedBlocks();
-
-    const cols = Array.from(document.querySelectorAll(".cal-day-col"));
-    const rangeEndMs = rangeStartMs + days * DAY_MS;
-
-    // 日ごとに分割して入れる
-    const byDay = new Map();
-
-    for (const p of (projects || [])) {
-      const sIso = p.usage_start_at ?? p.usage_start;
-      const eIso = p.usage_end_at ?? p.usage_end;
-
-      const sUtc = new Date(sIso);
-      const eUtc = new Date(eIso);
-      if (isNaN(sUtc.getTime()) || isNaN(eUtc.getTime())) continue;
-
-      const sMs = sUtc.getTime();
-      const eMs = eUtc.getTime();
-      if (eMs <= sMs) continue;
-
-      // 表示範囲外
-      if (eMs <= rangeStartMs || sMs >= rangeEndMs) continue;
-
-      // 分割ループ（日跨ぎ対応）
-      let curDayStartMs = startOfJstDayFromUtcDate(sUtc);
-      const endDayStartMs = startOfJstDayFromUtcDate(new Date(eMs - 1));
-
-      while (curDayStartMs <= endDayStartMs) {
-        const dayStartMs = curDayStartMs;
-        const dayEndMs = dayStartMs + DAY_MS;
-
-        const clipStart = Math.max(sMs, dayStartMs);
-        const clipEnd = Math.min(eMs, dayEndMs);
-
-        if (clipEnd > clipStart) {
-          const startMin = clamp((clipStart - dayStartMs) / 60000, 0, 1440);
-          const endMin = clamp((clipEnd - dayStartMs) / 60000, 0, 1440);
-
-          const dayKey = dayKeyFromDayStartMs(dayStartMs);
-          if (!byDay.has(dayKey)) byDay.set(dayKey, []);
-          byDay.get(dayKey).push({ p, startMin, endMin, colIndex: 0, colCount: 1 });
-        }
-
-        curDayStartMs += DAY_MS;
+        if (isLast) break;
+        dayKey = addJstDays(dayKey, 1);
       }
     }
 
-    const cellH = getCellHeightPx();
-    const minutesPerCell = 30;
+    for (const dayKey of visibleDays) {
+      const col = daysGrid.querySelector(`.cal-day-col[data-day="${dayKey}"]`);
+      if (!col) continue;
 
-    for (const [dayKey, entries] of byDay.entries()) {
-      const colEl = cols.find(c => c.dataset.date === dayKey);
-      if (!colEl) continue;
+      const segs = (segmentsByDay.get(dayKey) || [])
+        .slice()
+        .sort((a, b) => (a.startMin - b.startMin) || (a.endMin - b.endMin) || (a.id - b.id));
 
-      const laid = layoutOverlaps(entries);
+      const laidOut = layoutOverlaps(segs);
 
-      const PAD_L = 6, PAD_R = 6, GAP = 6;
-      const colW = colEl.getBoundingClientRect().width;
-      const innerW = Math.max(0, colW - PAD_L - PAD_R);
+      for (const s of laidOut) {
+        const el = document.createElement("div");
+        el.className = "cal-project";
 
-      for (const e of laid) {
-        const p = e.p;
+        el.classList.add(String(s.status));
+        if (s.shortage) el.classList.add("cal-project--shortage");
+        if (s.color_key) el.classList.add(`cal-color--${s.color_key}`);
 
-        const top = e.startMin * (cellH / minutesPerCell);
-        const height = Math.max(10, (e.endMin - e.startMin) * (cellH / minutesPerCell));
+        el.dataset.id = String(s.id);
+        el.dataset.day = s.dayKey;
+        el.textContent = s.title;
 
-        const colsCount = Math.max(1, e.colCount);
-        const idx = Math.max(0, e.colIndex);
+        const topPct = (s.startMin / DAY_MIN) * 100;
+        const heightPct = ((s.endMin - s.startMin) / DAY_MIN) * 100;
+        const leftPct = (s.colIndex / s.colCount) * 100;
+        const widthPct = (1 / s.colCount) * 100;
 
-        const wRaw = (colsCount === 1) ? innerW : (innerW - GAP * (colsCount - 1)) / colsCount;
-        const w = Math.max(40, wRaw);
-        const left = PAD_L + idx * (w + GAP);
-        const width = Math.max(40, Math.min(w, PAD_L + innerW - left));
+        el.style.top = `${topPct}%`;
+        el.style.height = `${heightPct}%`;
 
-        const block = document.createElement("div");
-        block.className = "cal-project";
-        block.dataset.projectId = String(p.id);
+        // ★ 重要：左右にGUTTER分を必ず確保して「列からはみ出さない」ようにする
+        el.style.left = `calc(${leftPct}% + ${GUTTER_PX}px)`;
+        el.style.width = `calc(${widthPct}% - ${GUTTER_PX * 2}px)`;
 
-        // status色（CSSの .cal-project.draft など）
-        block.classList.add(p.status || "draft");
-
-        // color_key（CSSの .cal-color--N）
-        if (p.color_key != null && p.color_key !== "") {
-          const ck = Number(p.color_key);
-          if (Number.isFinite(ck) && ck >= 1 && ck <= 12) block.classList.add(`cal-color--${ck}`);
-        }
-
-        // 不足赤枠
-        if (shortageIdSet && shortageIdSet.has(String(p.id))) {
-          block.classList.add("cal-project--shortage");
-        }
-
-        block.style.top = `${top.toFixed(2)}px`;
-        block.style.height = `${height.toFixed(2)}px`;
-        block.style.left = `${left.toFixed(2)}px`;
-        block.style.width = `${width.toFixed(2)}px`;
-        block.style.right = "auto";
-
-        const title = p.title ?? "(無題)";
-        const venue = (p.venue ?? "").toString().trim();
-
-        // CSSが title/venue の子要素を想定していても崩れないように class を付ける
-        block.innerHTML = `
-          <div class="cal-project-title">${escapeHtml(title)}</div>
-          ${venue ? `<div class="cal-project-venue">${escapeHtml(venue)}</div>` : ""}
-        `;
-
-        block.addEventListener("click", () => {
+        el.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
           const ret = encodeURIComponent(location.pathname + location.search);
-          location.href = `/project-edit.html?project_id=${encodeURIComponent(String(p.id))}&return=${ret}`;
+          location.href = `/project-edit.html?id=${encodeURIComponent(String(s.id))}&return=${ret}`;
         });
 
-        colEl.appendChild(block);
+        col.appendChild(el);
       }
     }
   }
 
-  // ===== 状態 =====
-  let mode = qs("mode") || "week";
-  let anchorMs = anchorFromUrlOrNow();
-
-  function shiftAnchor(dir) {
-    if (mode === "day") anchorMs += dir * DAY_MS;
-    else if (mode === "week") anchorMs += dir * 7 * DAY_MS;
-    else if (mode === "2week") anchorMs += dir * 14 * DAY_MS;
-    else {
-      const p = ymdFromUtcMsAsJst(anchorMs);
-      let y = p.y;
-      let m = p.m + dir;
-      while (m <= 0) { y--; m += 12; }
-      while (m >= 13) { y++; m -= 12; }
-      anchorMs = jstMidnightUtcMs(y, m, 1);
-    }
+  // ====== main ======
+  function getBaseDayKey() {
+    if (baseDateStr && /^\d{4}-\d{2}-\d{2}$/.test(baseDateStr)) return baseDateStr;
+    return jstTodayKey();
   }
 
-  async function load() {
-    clearError();
+  async function main() {
+    try {
+      showError("");
 
-    // URLを揃える（戻る/進む/モード変更で date が飛ぶ事故防止）
-    setQs("mode", mode);
-    syncDateParamToUrl(anchorMs);
-    setActiveMode(mode);
+      const baseKey = getBaseDayKey();
+      const days = getRangeDays(mode, baseKey);
 
-    const datePicker = document.getElementById("datePicker");
-    if (datePicker) datePicker.value = isoDateForPickerFromAnchorMs(anchorMs);
+      setActiveModeBtn(mode);
+      if (datePicker) datePicker.value = baseKey;
 
-    const r = computeRange(anchorMs, mode);
-    buildTimeColumn();
-    buildGridShell(r.startMs, r.days);
+      buildTimeCol();
+      buildDaysHeader(days);
+      buildDaysGrid(days);
 
-    const projects = await apiJson("/api/projects");
-    const shortageIdSet = await buildShortageIdSet(projects || []);
-    renderProjects(projects || [], r.startMs, r.days, shortageIdSet);
-  }
+      if (datePicker) {
+        datePicker.addEventListener("change", () => {
+          const v = datePicker.value;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(v)) navigateTo(mode, v);
+        });
+      }
 
-  function wire() {
-    const prevBtn = document.getElementById("prevBtn");
-    const nextBtn = document.getElementById("nextBtn");
-    const newBtn = document.getElementById("newBtn");
-    const datePicker = document.getElementById("datePicker");
-
-    if (prevBtn) prevBtn.addEventListener("click", () => {
-      shiftAnchor(-1);
-      load().catch(e => showError(e.message));
-    });
-
-    if (nextBtn) nextBtn.addEventListener("click", () => {
-      shiftAnchor(1);
-      load().catch(e => showError(e.message));
-    });
-
-    if (newBtn) newBtn.addEventListener("click", () => {
-      const ret = encodeURIComponent(location.pathname + location.search);
-      location.href = `/project-new.html?return=${ret}`;
-    });
-
-    if (datePicker) {
-      datePicker.addEventListener("change", () => {
-        const v = datePicker.value;
-        if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
-        const [y, m, d] = v.split("-").map(Number);
-        if (![y, m, d].every(Number.isFinite)) return;
-        anchorMs = jstMidnightUtcMs(y, m, d);
-        load().catch(e => showError(e.message));
+      Object.entries(modeBtns).forEach(([k, btn]) => {
+        if (!btn) return;
+        btn.addEventListener("click", () => navigateTo(k, baseKey));
       });
-    }
 
-    for (const id of ["modeDay", "modeWeek", "mode2Week", "modeMonth"]) {
-      const btn = document.getElementById(id);
-      if (!btn) continue;
-      btn.addEventListener("click", () => {
-        mode = btn.getAttribute("data-mode") || "week";
-        load().catch(e => showError(e.message));
+      prevBtn && prevBtn.addEventListener("click", () => {
+        const step = mode === "day" ? -1 : mode === "2week" ? -14 : mode === "month" ? -30 : -7;
+        navigateTo(mode, addJstDays(baseKey, step));
       });
+
+      nextBtn && nextBtn.addEventListener("click", () => {
+        const step = mode === "day" ? 1 : mode === "2week" ? 14 : mode === "month" ? 30 : 7;
+        navigateTo(mode, addJstDays(baseKey, step));
+      });
+
+      newBtn && newBtn.addEventListener("click", () => {
+        const ret = encodeURIComponent(location.pathname + location.search);
+        location.href = `/project-edit.html?return=${ret}`;
+      });
+
+      const projects = await fetchProjects();
+      renderProjects(projects, days);
+    } catch (e) {
+      console.error(e);
+      showError(String(e.message || e));
     }
   }
 
-  // 画面が真っ白になる系を潰す（例外を必ず表示）
-  window.addEventListener("error", (ev) => {
-    const msg = ev?.error?.message || ev?.message || "不明なエラー";
-    showError("画面エラー: " + msg);
-  });
-  window.addEventListener("unhandledrejection", (ev) => {
-    const msg = ev?.reason?.message || String(ev?.reason || "不明なエラー");
-    showError("通信/処理エラー: " + msg);
-  });
-
-  wire();
-  load().catch(e => showError(e.message));
+  main();
 })();
