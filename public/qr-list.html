@@ -1,166 +1,201 @@
-<!-- public/qr-list.html（完全版：PDF出力 + CSV出力（日本語ヘッダー）） -->
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>QR一覧</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; margin: 0; background: #f6f7f9; color: #111; }
-    header { position: sticky; top: 0; background: #fff; border-bottom: 1px solid #e5e7eb; padding: 12px 14px; z-index: 5; }
-    h1 { font-size: 18px; margin: 0 0 8px 0; }
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #111; }
+
+    header {
+      position: sticky; top: 0; background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 12px 14px; z-index: 5;
+    }
+    h1 { font-size: 18px; margin: 0 0 10px 0; }
+
     .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    input[type="search"] { flex: 1; min-width: 180px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; }
-    button { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; cursor: pointer; }
-    button:active { transform: translateY(1px); }
-    .btnPrimary { border-color: #111827; }
-    .meta { font-size: 12px; color: #4b5563; margin-top: 8px; line-height: 1.5; }
+
+    input[type="search"] {
+      flex: 1; min-width: 180px; padding: 10px 12px;
+      border: 1px solid #d1d5db; border-radius: 10px;
+    }
+
+    button {
+      padding: 10px 14px; border: 1px solid #d1d5db;
+      border-radius: 10px; background: #fff; cursor: pointer;
+      font-size: 14px; font-weight: 600;
+    }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button:not(:disabled):hover { background: #f3f4f6; }
+    .btn-primary { background: #111827; color: #fff; border-color: #111827; }
+    .btn-primary:not(:disabled):hover { background: #374151; }
+
+    #status { padding: 12px 14px; font-size: 14px; color: #6b7280; }
+
     main { padding: 12px 14px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
-    .name { font-size: 15px; font-weight: 700; margin: 0 0 6px 0; }
-    .sub { font-size: 12px; color: #374151; margin: 0 0 10px 0; }
-    .qrwrap { display: grid; place-items: center; background: #f9fafb; border-radius: 12px; padding: 10px; border: 1px dashed #e5e7eb; }
-    img { width: 180px; height: 180px; image-rendering: pixelated; }
-    .err { background: #fff; border: 1px solid #fecaca; color: #991b1b; padding: 12px; border-radius: 12px; white-space: pre-wrap; }
-    .hint { font-size: 12px; color: #6b7280; margin-top: 10px; line-height: 1.5; }
-    .toolbar { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .pill { font-size: 12px; padding: 6px 10px; border-radius: 999px; background: #f3f4f6; border: 1px solid #e5e7eb; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      background: #fff; border: 1px solid #e5e7eb;
+      border-radius: 14px; padding: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .card-name { font-size: 15px; font-weight: 700; margin: 0 0 4px 0; }
+    .card-sub { font-size: 12px; color: #6b7280; margin: 0 0 10px 0; }
+    .qr-wrap {
+      display: grid; place-items: center;
+      background: #f9fafb; border-radius: 10px;
+      padding: 10px; border: 1px dashed #e5e7eb;
+    }
+    .qr-wrap img { width: 160px; height: 160px; image-rendering: pixelated; }
+
+    .empty { text-align: center; color: #9ca3af; padding: 40px 0; }
+    .error { color: #b91c1c; padding: 12px 14px; }
+
+    /* PDF印刷用 */
+    @media print {
+      header { display: none; }
+      #status { display: none; }
+      body { background: #fff; }
+      .grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .card { box-shadow: none; break-inside: avoid; }
+    }
   </style>
 </head>
 <body>
 
 <header>
   <h1>QR一覧</h1>
-
   <div class="row">
-    <input id="q" type="search" placeholder="検索（例：機材名 / ID）" />
-    <button id="reload">再読み込み</button>
-    <button id="pdf" class="btnPrimary" disabled>PDF出力</button>
-    <button id="csv" disabled>CSV出力</button>
+    <input id="searchInput" type="search" placeholder="機材名で検索" />
+    <button id="reloadBtn">再読み込み</button>
+    <button id="pdfBtn" class="btn-primary" disabled>PDF出力</button>
+    <button id="csvBtn" disabled>CSV出力</button>
+    <button id="backBtn">← カレンダーへ</button>
   </div>
 </header>
 
+<div id="status">読み込み中…</div>
 <main>
-  <div id="status">読み込み中…</div>
   <div id="grid" class="grid"></div>
 </main>
 
 <script>
+  let allItems = [];
+  let currentItems = [];
 
-const $ = id => document.getElementById(id);
+  function $(id) { return document.getElementById(id); }
 
-let allItems = [];
-let currentItems = [];
+  function showStatus(msg, isError) {
+    const el = $('status');
+    el.textContent = msg;
+    el.className = isError ? 'error' : '';
+    el.style.display = msg ? '' : 'none';
+  }
 
-function render(items){
+  // ====== 描画 ======
+  function render(items) {
+    currentItems = items;
+    const grid = $('grid');
+    grid.innerHTML = '';
 
- currentItems = items;
+    if (items.length === 0) {
+      grid.innerHTML = '<div class="empty">該当する機材がありません</div>';
+      $('pdfBtn').disabled = true;
+      $('csvBtn').disabled = true;
+      return;
+    }
 
- const grid = $("grid");
- grid.innerHTML = "";
+    for (const it of items) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `
+        <p class="card-name">${it.name}</p>
+        <p class="card-sub">ID: ${it.id}　保有数: ${it.total_quantity}</p>
+        <div class="qr-wrap">
+          <img src="data:image/png;base64,${it.qr_png_base64}" alt="QR: ${it.name}" />
+        </div>
+      `;
+      grid.appendChild(card);
+    }
 
- for(const it of items){
+    $('pdfBtn').disabled = false;
+    $('csvBtn').disabled = false;
+  }
 
-  const div = document.createElement("div");
-  div.className = "card";
+  // ====== データ取得 ======
+  async function load() {
+    showStatus('読み込み中…');
+    try {
+      const res = await fetch('/api/qr');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      allItems = await res.json();
+      render(allItems);
+      showStatus(`${allItems.length}件の機材`, false);
+    } catch (e) {
+      showStatus('読み込みに失敗しました: ' + e.message, true);
+    }
+  }
 
-  div.innerHTML = `
-   <div class="name">${it.name}</div>
-   <div class="sub">ID:${it.id}</div>
-   <div class="sub">合計:${it.total_quantity}</div>
-   <div class="sub">現在:${it.current_quantity}</div>
-   <div class="qrwrap">
-    <img src="data:image/png;base64,${it.qr_png_base64}">
-   </div>
-  `;
+  // ====== 検索 ======
+  $('searchInput').addEventListener('input', () => {
+    const q = $('searchInput').value.trim().toLowerCase();
+    if (!q) {
+      render(allItems);
+      return;
+    }
+    const filtered = allItems.filter(it =>
+      it.name.toLowerCase().includes(q) ||
+      String(it.id).includes(q)
+    );
+    render(filtered);
+  });
 
-  grid.appendChild(div);
- }
+  // ====== PDF出力 ======
+  $('pdfBtn').addEventListener('click', () => {
+    window.print();
+  });
 
- $("pdf").disabled = items.length === 0;
- $("csv").disabled = items.length === 0;
-}
+  // ====== CSV出力 ======
+  function csvEscape(v) {
+    const s = String(v ?? '');
+    if (/[",\r\n]/.test(s)) return `"${s.replaceAll('"', '""')}"`;
+    return s;
+  }
 
-async function load(){
+  $('csvBtn').addEventListener('click', () => {
+    const header = ['ID', '機材名', '保有数', '作成日時'];
+    const rows = currentItems.map(it => [
+      it.id,
+      it.name,
+      it.total_quantity,
+      it.created_at,
+    ].map(csvEscape).join(','));
 
- const res = await fetch("/api/qr-list");
- const data = await res.json();
+    const csv = '\uFEFF' + [header.join(','), ...rows].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'qr_list.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 
- allItems = data;
+  // ====== ボタン ======
+  $('reloadBtn').addEventListener('click', load);
+  $('backBtn').addEventListener('click', () => location.href = '/calendar.html');
 
- render(data);
-
- $("status").innerText = "読み込み完了";
-}
-
-function csvEscape(v){
-
- const s = String(v ?? "");
-
- if(/[",\r\n]/.test(s))
-  return `"${s.replaceAll('"','""')}"`;
-
- return s;
-}
-
-function buildCsv(items){
-
- // ヘッダー日本語化
- const header = [
-  "ID",
-  "名",
-  "合計数量",
-  "現在の数量",
-  "作成日時"
- ];
-
- const lines = [];
-
- lines.push(header.join(","));
-
- for(const it of items){
-
-  const row = [
-
-   it.id,
-   it.name,
-   it.total_quantity,
-   it.current_quantity,
-   it.created_at
-
-  ].map(csvEscape);
-
-  lines.push(row.join(","));
- }
-
- return "\uFEFF" + lines.join("\r\n");
-}
-
-function downloadCsv(){
-
- const csv = buildCsv(currentItems);
-
- const blob = new Blob([csv],{type:"text/csv;charset=utf-8;"});
-
- const url = URL.createObjectURL(blob);
-
- const a = document.createElement("a");
-
- a.href = url;
-
- a.download = "qr_list.csv";
-
- a.click();
-
- URL.revokeObjectURL(url);
-}
-
-$("csv").onclick = downloadCsv;
-
-load();
-
+  load();
 </script>
-
 </body>
 </html>
