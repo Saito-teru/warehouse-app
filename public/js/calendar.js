@@ -437,7 +437,7 @@
 
       newBtn && newBtn.addEventListener("click", () => {
         const ret = encodeURIComponent(location.pathname + location.search);
-        location.href = `/project-edit.html?return=${ret}`;
+        location.href = `/project-new.html?return=${ret}`;
       });
 
       const projects = await fetchProjects();

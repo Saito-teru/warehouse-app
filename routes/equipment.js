@@ -8,15 +8,13 @@ const db = require("../db");
  * 返却: { equipment: [...] }
  * project-items.html がこのAPIを使って機材一覧を表示する
  */
-router.get("/equipment", async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const result = await db.query(`
       SELECT
         id,
         name,
         total_quantity,
-        current_quantity,
-        qr_png_base64,
         created_at
       FROM equipment
       ORDER BY id ASC

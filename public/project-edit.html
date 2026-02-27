@@ -101,9 +101,20 @@
       <div class="actions">
         <button id="saveBtn" type="button" class="primary">保存</button>
         <button id="itemsBtn" type="button">機材割当</button>
+        <button id="checklistBtn" type="button">チェックリスト</button>
       </div>
     </div>
   </div>
+```
+
+---
+
+次に `project-edit.html` の JavaScript部分に、ボタンのクリック処理を追加します。
+
+**Ctrl+F** で以下を検索してください：
+```
+itemsBtn
+
 
 <script>
 (() => {
@@ -384,6 +395,12 @@
     itemsBtn.addEventListener("click", () => {
       location.href =
         `/project-items.html?project_id=${encodeURIComponent(String(projectId))}` +
+        `&return=${encodeURIComponent(location.pathname + location.search)}`;
+    });
+
+    checklistBtn.addEventListener("click", () => {
+      location.href =
+        `/checklist.html?project_id=${encodeURIComponent(String(projectId))}` +
         `&return=${encodeURIComponent(location.pathname + location.search)}`;
     });
   }

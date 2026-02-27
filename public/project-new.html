@@ -193,9 +193,12 @@
     }
 
     function combineDateTime(dateStr, timeStr) {
-      // 入力された日付/時刻を「そのまま」ISO文字列にする（ローカル時間ベース）
-      // 例：2026-02-18 + 09:30 → 2026-02-18T09:30:00
-      return `${dateStr}T${timeStr}:00`;
+      // JSTとして入力された日時をUTCに変換してISOで返す
+      // 例：2026-02-18 + 10:00(JST) → 2026-02-18T01:00:00.000Z
+      const localStr = `${dateStr}T${timeStr}:00`;
+      const jstMs = new Date(localStr).getTime();
+      const utcMs = jstMs - (9 * 60 * 60 * 1000);
+      return new Date(utcMs).toISOString();
     }
 
     // 発送/返却（内部保持）
@@ -291,6 +294,13 @@
           `終了日時: ${json.usage_end_at}\n` +
           `発送日: ${json.shipping_date ?? "-"}\n` +
           `返却予定: ${json.return_due_date ?? "-"}\n`;
+
+        // 案件作成成功後に機材入力ページへ自動遷移
+        setTimeout(() => {
+          location.href =
+            `/project-items.html?project_id=${encodeURIComponent(String(json.id))}` +
+            `&return=${encodeURIComponent("/calendar.html")}`;
+        }, 1500);
 
       } catch (e) {
         showErr(
