@@ -21,10 +21,9 @@
     button.primary { background:#111827; color:#fff; border-color:#111827; }
     button:disabled { opacity: .5; cursor:not-allowed; }
     @media (max-width: 720px){ .grid{ grid-template-columns: 1fr; } }
-
     .dtrow { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     .dtrow input[type="date"]{ width: 170px; }
-    .dtrow select{ width: 140px; } /* 時+分を1つのボタン */
+    .dtrow select{ width: 140px; }
   </style>
 </head>
 <body>
@@ -38,23 +37,18 @@
 
     <div class="card">
       <div class="grid">
-        <!-- 指示順：タイトル / クライアント / 会場 / 状態 / 使用開始 / 使用終了 / 発送有無 / 発送日 / 返却予定日 -->
-
         <div class="row">
           <label>タイトル</label>
           <input id="title" type="text" />
         </div>
-
         <div class="row">
           <label>クライアント</label>
           <input id="clientName" type="text" />
         </div>
-
         <div class="row">
           <label>会場</label>
           <input id="venue" type="text" />
         </div>
-
         <div class="row">
           <label>状態</label>
           <select id="status">
@@ -63,7 +57,6 @@
             <option value="cancelled">cancelled</option>
           </select>
         </div>
-
         <div class="row">
           <label>使用開始（必須）</label>
           <div class="dtrow">
@@ -71,7 +64,6 @@
             <select id="startTime"></select>
           </div>
         </div>
-
         <div class="row">
           <label>使用終了（必須）</label>
           <div class="dtrow">
@@ -79,7 +71,6 @@
             <select id="endTime"></select>
           </div>
         </div>
-
         <div class="row">
           <label>発送有無</label>
           <select id="shippingEnabled">
@@ -87,12 +78,10 @@
             <option value="yes">あり</option>
           </select>
         </div>
-
         <div class="row">
           <label>発送日</label>
           <input id="shippingDate" type="date" />
         </div>
-
         <div class="row">
           <label>返却予定日</label>
           <input id="returnDueDate" type="date" />
@@ -104,313 +93,293 @@
         <button id="itemsBtn" type="button">機材割当</button>
         <button id="checklistBtn" type="button">チェックリスト</button>
       </div>
+
+      <div id="shortageArea" style="margin-top:12px; display:none;">
+        <div style="font-size:13px; font-weight:700; color:#b91c1c; margin-bottom:6px;">⚠️ 在庫不足の機材があります</div>
+        <ul id="shortageList" style="margin:0; padding-left:18px; font-size:13px; color:#b91c1c;"></ul>
+      </div>
     </div>
   </div>
-```
 
----
+  <script>
+  (() => {
+    const JST_OFFSET_HOURS = 9;
+    const JST_MS = JST_OFFSET_HOURS * 60 * 60 * 1000;
 
-次に `project-edit.html` の JavaScript部分に、ボタンのクリック処理を追加します。
+    const errorText = document.getElementById("errorText");
+    const saveBtn = document.getElementById("saveBtn");
+    const backBtn = document.getElementById("backBtn");
+    const itemsBtn = document.getElementById("itemsBtn");
+    const checklistBtn = document.getElementById("checklistBtn");
 
-**Ctrl+F** で以下を検索してください：
-```
-itemsBtn
+    const el = {
+      title: document.getElementById("title"),
+      clientName: document.getElementById("clientName"),
+      venue: document.getElementById("venue"),
+      status: document.getElementById("status"),
+      startDate: document.getElementById("startDate"),
+      startTime: document.getElementById("startTime"),
+      endDate: document.getElementById("endDate"),
+      endTime: document.getElementById("endTime"),
+      shippingEnabled: document.getElementById("shippingEnabled"),
+      shippingDate: document.getElementById("shippingDate"),
+      returnDueDate: document.getElementById("returnDueDate"),
+    };
 
+    let userTouchedEnd = false;
 
-<script>
-(() => {
-  const JST_OFFSET_HOURS = 9;
-  const JST_MS = JST_OFFSET_HOURS * 60 * 60 * 1000;
+    function showError(msg){ errorText.textContent = msg || ""; }
+    function clearError(){ errorText.textContent = ""; }
 
-  const errorText = document.getElementById("errorText");
-  const saveBtn = document.getElementById("saveBtn");
-  const backBtn = document.getElementById("backBtn");
-  const itemsBtn = document.getElementById("itemsBtn");
-
-  const el = {
-    title: document.getElementById("title"),
-    clientName: document.getElementById("clientName"),
-    venue: document.getElementById("venue"),
-    status: document.getElementById("status"),
-
-    startDate: document.getElementById("startDate"),
-    startTime: document.getElementById("startTime"),
-    endDate: document.getElementById("endDate"),
-    endTime: document.getElementById("endTime"),
-
-    shippingEnabled: document.getElementById("shippingEnabled"),
-    shippingDate: document.getElementById("shippingDate"),
-    returnDueDate: document.getElementById("returnDueDate"),
-  };
-
-  // 終了をユーザーが触ったら、自動+1hを止める
-  let userTouchedEnd = false;
-
-  function showError(msg){ errorText.textContent = msg || ""; }
-  function clearError(){ errorText.textContent = ""; }
-
-  function getToken(){
-    return localStorage.getItem("token") || localStorage.getItem("jwt") || "";
-  }
-
-  async function apiFetch(path, opts = {}) {
-    const token = getToken();
-    const headers = Object.assign({}, opts.headers || {});
-    if (token) headers.Authorization = `Bearer ${token}`;
-    if (!headers["Content-Type"] && opts.body) headers["Content-Type"] = "application/json";
-
-    const res = await fetch(path, { ...opts, headers });
-    const text = await res.text();
-    let json = null;
-    try { json = text ? JSON.parse(text) : null; } catch {}
-
-    if (!res.ok) {
-      const msg = (json && (json.error || json.message)) || text || `HTTP ${res.status}`;
-      throw new Error(msg);
+    function getToken(){
+      return localStorage.getItem("token") || localStorage.getItem("jwt") || "";
     }
-    return json;
-  }
 
-  function getParam(name){
-    return new URL(location.href).searchParams.get(name);
-  }
+    async function apiFetch(path, opts = {}) {
+      const token = getToken();
+      const headers = Object.assign({}, opts.headers || {});
+      if (token) headers.Authorization = `Bearer ${token}`;
+      if (!headers["Content-Type"] && opts.body) headers["Content-Type"] = "application/json";
+      const res = await fetch(path, { ...opts, headers });
+      const text = await res.text();
+      let json = null;
+      try { json = text ? JSON.parse(text) : null; } catch {}
+      if (!res.ok) {
+        const msg = (json && (json.error || json.message)) || text || `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return json;
+    }
 
-  const projectIdRaw = getParam("project_id") || getParam("id");
-  const projectId = Number(projectIdRaw);
+    function getParam(name){
+      return new URL(location.href).searchParams.get(name);
+    }
 
-  const returnRaw = getParam("return");
-  let returnUrl = "/calendar.html?mode=week";
-  if (returnRaw) {
-    try { returnUrl = decodeURIComponent(returnRaw); } catch { returnUrl = returnRaw; }
-  }
+    const projectIdRaw = getParam("project_id") || getParam("id");
+    const projectId = Number(projectIdRaw);
 
-  if (!Number.isFinite(projectId)) {
-    showError("project_id が不正です。");
-    saveBtn.disabled = true;
-    return;
-  }
+    const returnRaw = getParam("return");
+    let returnUrl = "/calendar.html?mode=week";
+    if (returnRaw) {
+      try { returnUrl = decodeURIComponent(returnRaw); } catch { returnUrl = returnRaw; }
+    }
 
-  function pad2(n){ return String(n).padStart(2,"0"); }
+    if (!Number.isFinite(projectId)) {
+      showError("project_id が不正です。");
+      saveBtn.disabled = true;
+      return;
+    }
 
-  function fillTimeOptions(sel){
-    sel.innerHTML = "";
-    for(let h=0; h<=23; h++){
-      for(const m of [0,15,30,45]){
-        const v = `${pad2(h)}:${pad2(m)}`;
-        const opt = document.createElement("option");
-        opt.value = v;
-        opt.textContent = v;
-        sel.appendChild(opt);
+    function pad2(n){ return String(n).padStart(2,"0"); }
+
+    function fillTimeOptions(sel){
+      sel.innerHTML = "";
+      for(let h=0; h<=23; h++){
+        for(const m of [0,15,30,45]){
+          const v = `${pad2(h)}:${pad2(m)}`;
+          const opt = document.createElement("option");
+          opt.value = v;
+          opt.textContent = v;
+          sel.appendChild(opt);
+        }
       }
     }
-  }
 
-  function setShippingUi(){
-    const enabled = el.shippingEnabled.value === "yes";
-    el.shippingDate.disabled = !enabled;
-    if (!enabled) el.shippingDate.value = "";
-  }
-
-  // ISOZ(UTC) -> JST parts（date + "HH:MM"）
-  function isoZToJstParts(isoZ){
-    const d = new Date(isoZ);
-    if (isNaN(d.getTime())) return null;
-
-    // UTCms + 9h を「UTC getter」で読む = JST固定
-    const j = new Date(d.getTime() + JST_MS);
-
-    const y = j.getUTCFullYear();
-    const mo = j.getUTCMonth()+1;
-    const da = j.getUTCDate();
-    const hh = j.getUTCHours();
-    const mm = j.getUTCMinutes();
-
-    // 15分単位に丸め（UIが15分刻み）
-    const snapped = Math.round(mm/15)*15;
-    let hh2 = hh, mm2 = snapped;
-    if (mm2 === 60) { hh2 = (hh2+1)%24; mm2 = 0; }
-
-    return {
-      date: `${y}-${pad2(mo)}-${pad2(da)}`,
-      time: `${pad2(hh2)}:${pad2(mm2)}`
-    };
-  }
-
-  // JST(date + "HH:MM") -> ISOZ(UTC)
-  function jstToIsoZ(dateStr, timeStr){
-    if (!dateStr || !timeStr) return null;
-    const [y,mo,da] = dateStr.split("-").map(Number);
-    const [hh,mm] = timeStr.split(":").map(Number);
-    if (![y,mo,da,hh,mm].every(Number.isFinite)) return null;
-
-    // JST を UTC に戻す（-9h）
-    const utcMs = Date.UTC(y, mo-1, da, hh - JST_OFFSET_HOURS, mm, 0, 0);
-    const dt = new Date(utcMs);
-    if (isNaN(dt.getTime())) return null;
-    return dt.toISOString();
-  }
-
-  function addMinutesIso(isoZ, addMin){
-    const d = new Date(isoZ);
-    if (isNaN(d.getTime())) return isoZ;
-    return new Date(d.getTime() + addMin*60000).toISOString();
-  }
-
-  // 開始を変えたら終了を自動で+60分（ただしユーザーが終了を触った後はしない）
-  function autoEndPlus1h(){
-    if (userTouchedEnd) return;
-
-    const sIso = jstToIsoZ(el.startDate.value, el.startTime.value);
-    if (!sIso) return;
-
-    const fixed = addMinutesIso(sIso, 60);
-    const parts = isoZToJstParts(fixed);
-    if (!parts) return;
-
-    el.endDate.value = parts.date;
-    el.endTime.value = parts.time;
-  }
-
-  function validate(){
-    clearError();
-
-    const sIso = jstToIsoZ(el.startDate.value, el.startTime.value);
-    const eIso = jstToIsoZ(el.endDate.value, el.endTime.value);
-
-    if (!sIso || !eIso) {
-      showError("使用開始と使用終了は必須です。");
-      saveBtn.disabled = true;
-      return null;
+    function setShippingUi(){
+      const enabled = el.shippingEnabled.value === "yes";
+      el.shippingDate.disabled = !enabled;
+      if (!enabled) el.shippingDate.value = "";
     }
 
-    const s = new Date(sIso);
-    const e = new Date(eIso);
+    function isoZToJstParts(isoZ){
+      const d = new Date(isoZ);
+      if (isNaN(d.getTime())) return null;
+      const j = new Date(d.getTime() + JST_MS);
+      const y = j.getUTCFullYear();
+      const mo = j.getUTCMonth()+1;
+      const da = j.getUTCDate();
+      const hh = j.getUTCHours();
+      const mm = j.getUTCMinutes();
+      const snapped = Math.round(mm/15)*15;
+      let hh2 = hh, mm2 = snapped;
+      if (mm2 === 60) { hh2 = (hh2+1)%24; mm2 = 0; }
+      return {
+        date: `${y}-${pad2(mo)}-${pad2(da)}`,
+        time: `${pad2(hh2)}:${pad2(mm2)}`
+      };
+    }
 
-    if (e <= s) {
-      // 終了が開始以下なら、強制で+60分（ここはユーザーが触っていても整合性優先）
+    function jstToIsoZ(dateStr, timeStr){
+      if (!dateStr || !timeStr) return null;
+      const [y,mo,da] = dateStr.split("-").map(Number);
+      const [hh,mm] = timeStr.split(":").map(Number);
+      if (![y,mo,da,hh,mm].every(Number.isFinite)) return null;
+      const utcMs = Date.UTC(y, mo-1, da, hh - JST_OFFSET_HOURS, mm, 0, 0);
+      const dt = new Date(utcMs);
+      if (isNaN(dt.getTime())) return null;
+      return dt.toISOString();
+    }
+
+    function addMinutesIso(isoZ, addMin){
+      const d = new Date(isoZ);
+      if (isNaN(d.getTime())) return isoZ;
+      return new Date(d.getTime() + addMin*60000).toISOString();
+    }
+
+    function autoEndPlus1h(){
+      if (userTouchedEnd) return;
+      const sIso = jstToIsoZ(el.startDate.value, el.startTime.value);
+      if (!sIso) return;
       const fixed = addMinutesIso(sIso, 60);
       const parts = isoZToJstParts(fixed);
+      if (!parts) return;
       el.endDate.value = parts.date;
       el.endTime.value = parts.time;
-      userTouchedEnd = false;
     }
 
-    const e2Iso = jstToIsoZ(el.endDate.value, el.endTime.value);
-    const e2 = new Date(e2Iso);
+    function validate(){
+      clearError();
+      const sIso = jstToIsoZ(el.startDate.value, el.startTime.value);
+      const eIso = jstToIsoZ(el.endDate.value, el.endTime.value);
+      if (!sIso || !eIso) {
+        showError("使用開始と使用終了は必須です。");
+        saveBtn.disabled = true;
+        return null;
+      }
+      const s = new Date(sIso);
+      const e = new Date(eIso);
+      if (e <= s) {
+        const fixed = addMinutesIso(sIso, 60);
+        const parts = isoZToJstParts(fixed);
+        el.endDate.value = parts.date;
+        el.endTime.value = parts.time;
+        userTouchedEnd = false;
+      }
+      const e2Iso = jstToIsoZ(el.endDate.value, el.endTime.value);
+      const e2 = new Date(e2Iso);
+      if (e2 <= s) {
+        showError("使用終了は使用開始より後にしてください。");
+        saveBtn.disabled = true;
+        return null;
+      }
+      saveBtn.disabled = false;
+      return { sIso, eIso: e2Iso };
+    }
 
-    if (e2 <= s) {
-      showError("使用終了は使用開始より後にしてください。");
+    async function loadShortage() {
+      try {
+        const res = await fetch(`/api/shortages`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const found = (data.projects || []).find(p => p.project_id === projectId);
+
+        const shortageArea = document.getElementById('shortageArea');
+        const shortageList = document.getElementById('shortageList');
+        shortageList.innerHTML = '';
+
+        if (!found || !found.shortage) {
+          shortageArea.style.display = 'none';
+          return;
+        }
+
+        if (found.shortage_details && found.shortage_details.length > 0) {
+          for (const d of found.shortage_details) {
+            const li = document.createElement('li');
+            li.textContent = `${d.name}：必要 ${d.demand} / 在庫 ${d.total_quantity}（不足 ${d.shortage_count}）`;
+            shortageList.appendChild(li);
+          }
+        } else {
+          const li = document.createElement('li');
+          li.textContent = '在庫不足あり（詳細は機材割当を確認してください）';
+          shortageList.appendChild(li);
+        }
+
+        shortageArea.style.display = 'block';
+      } catch (e) {
+        console.warn('shortage取得失敗:', e);
+      }
+    }
+
+    async function load() {
+      clearError();
       saveBtn.disabled = true;
-      return null;
+      const p = await apiFetch(`/api/projects/${encodeURIComponent(String(projectId))}`, { method: "GET" });
+      el.title.value = p.title || "";
+      el.clientName.value = p.client_name || "";
+      el.venue.value = p.venue || "";
+      el.status.value = p.status || "draft";
+      el.shippingEnabled.value = p.shipping_type ? "yes" : "no";
+      el.shippingDate.value = p.shipping_date ? String(p.shipping_date).slice(0,10) : "";
+      el.returnDueDate.value = p.return_due_date ? String(p.return_due_date).slice(0,10) : "";
+      setShippingUi();
+      if (!p.usage_start_at || !p.usage_end_at) {
+        showError("使用開始/使用終了がDBにありません。");
+        return;
+      }
+      const sParts = isoZToJstParts(p.usage_start_at);
+      const eParts = isoZToJstParts(p.usage_end_at);
+      if (!sParts || !eParts) {
+        showError("使用開始/使用終了が読み取れません。");
+        return;
+      }
+      el.startDate.value = sParts.date;
+      el.startTime.value = sParts.time;
+      el.endDate.value = eParts.date;
+      el.endTime.value = eParts.time;
+      userTouchedEnd = false;
+      validate();
+      loadShortage();
     }
 
-    saveBtn.disabled = false;
-    return { sIso, eIso: e2Iso };
-  }
-
-  async function load() {
-    clearError();
-    saveBtn.disabled = true;
-
-    const p = await apiFetch(`/api/projects/${encodeURIComponent(String(projectId))}`, { method: "GET" });
-
-    el.title.value = p.title || "";
-    el.clientName.value = p.client_name || "";
-    el.venue.value = p.venue || "";
-    el.status.value = p.status || "draft";
-
-    // 発送有無（shipping_typeが入っているなら「あり」）
-    el.shippingEnabled.value = p.shipping_type ? "yes" : "no";
-    el.shippingDate.value = p.shipping_date ? String(p.shipping_date).slice(0,10) : "";
-    el.returnDueDate.value = p.return_due_date ? String(p.return_due_date).slice(0,10) : "";
-    setShippingUi();
-
-    if (!p.usage_start_at || !p.usage_end_at) {
-      showError("使用開始/使用終了がDBにありません。");
-      return;
+    async function save() {
+      const t = validate();
+      if (!t) return;
+      const shipEnabled = el.shippingEnabled.value === "yes";
+      const body = {
+        title: el.title.value.trim(),
+        client_name: el.clientName.value.trim(),
+        venue: el.venue.value.trim(),
+        status: el.status.value,
+        shipping_type: shipEnabled ? "carry" : null,
+        shipping_date: shipEnabled ? (el.shippingDate.value || null) : null,
+        return_due_date: el.returnDueDate.value || null,
+        usage_start_at: t.sIso,
+        usage_end_at: t.eIso,
+      };
+      saveBtn.disabled = true;
+      clearError();
+      await apiFetch(`/api/projects/${encodeURIComponent(String(projectId))}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+      location.href = returnUrl;
     }
 
-    const sParts = isoZToJstParts(p.usage_start_at);
-    const eParts = isoZToJstParts(p.usage_end_at);
-    if (!sParts || !eParts) {
-      showError("使用開始/使用終了が読み取れません。");
-      return;
+    function wire(){
+      el.startDate.addEventListener("change", ()=>{ autoEndPlus1h(); validate(); });
+      el.startTime.addEventListener("change", ()=>{ autoEndPlus1h(); validate(); });
+      el.endDate.addEventListener("change", ()=>{ userTouchedEnd = true; validate(); });
+      el.endTime.addEventListener("change", ()=>{ userTouchedEnd = true; validate(); });
+      el.shippingEnabled.addEventListener("change", ()=>{ setShippingUi(); });
+      saveBtn.addEventListener("click", save);
+      backBtn.addEventListener("click", ()=>location.href = returnUrl);
+      itemsBtn.addEventListener("click", () => {
+        location.href =
+          `/project-items.html?project_id=${encodeURIComponent(String(projectId))}` +
+          `&return=${encodeURIComponent(location.pathname + location.search)}`;
+      });
+      checklistBtn.addEventListener("click", () => {
+        location.href =
+          `/checklist.html?project_id=${encodeURIComponent(String(projectId))}` +
+          `&return=${encodeURIComponent(location.pathname + location.search)}`;
+      });
     }
 
-    // ★ここで確実にUIへ反映
-    el.startDate.value = sParts.date;
-    el.startTime.value = sParts.time;
-    el.endDate.value = eParts.date;
-    el.endTime.value = eParts.time;
-
-    userTouchedEnd = false;
-    validate();
-  }
-
-  async function save() {
-    const t = validate();
-    if (!t) return;
-
-    const shipEnabled = el.shippingEnabled.value === "yes";
-
-    const body = {
-      title: el.title.value.trim(),
-      client_name: el.clientName.value.trim(),
-      venue: el.venue.value.trim(),
-      status: el.status.value,
-
-      // 「発送有無」だけのUIなので、ありの場合は carry を入れる（暫定）
-      shipping_type: shipEnabled ? "carry" : null,
-      shipping_date: shipEnabled ? (el.shippingDate.value || null) : null,
-      return_due_date: el.returnDueDate.value || null,
-
-      usage_start_at: t.sIso,
-      usage_end_at: t.eIso,
-    };
-
-    saveBtn.disabled = true;
-    clearError();
-
-    await apiFetch(`/api/projects/${encodeURIComponent(String(projectId))}`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    });
-
-    location.href = returnUrl;
-  }
-
-  function wire(){
-    // 開始変更 → 終了+1h（終了を触っていなければ）
-    el.startDate.addEventListener("change", ()=>{ autoEndPlus1h(); validate(); });
-    el.startTime.addEventListener("change", ()=>{ autoEndPlus1h(); validate(); });
-
-    // 終了を触ったらフラグON
-    el.endDate.addEventListener("change", ()=>{ userTouchedEnd = true; validate(); });
-    el.endTime.addEventListener("change", ()=>{ userTouchedEnd = true; validate(); });
-
-    el.shippingEnabled.addEventListener("change", ()=>{ setShippingUi(); });
-
-    saveBtn.addEventListener("click", save);
-    backBtn.addEventListener("click", ()=>location.href = returnUrl);
-
-    itemsBtn.addEventListener("click", () => {
-      location.href =
-        `/project-items.html?project_id=${encodeURIComponent(String(projectId))}` +
-        `&return=${encodeURIComponent(location.pathname + location.search)}`;
-    });
-
-    checklistBtn.addEventListener("click", () => {
-      location.href =
-        `/checklist.html?project_id=${encodeURIComponent(String(projectId))}` +
-        `&return=${encodeURIComponent(location.pathname + location.search)}`;
-    });
-  }
-
-  fillTimeOptions(el.startTime);
-  fillTimeOptions(el.endTime);
-  wire();
-  load().catch(e => showError(e.message));
-})();
-</script>
+    fillTimeOptions(el.startTime);
+    fillTimeOptions(el.endTime);
+    wire();
+    load().catch(e => showError(e.message));
+  })();
+  </script>
 </body>
 </html>
