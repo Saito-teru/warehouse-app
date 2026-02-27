@@ -5,8 +5,6 @@
   const TZ = "Asia/Tokyo";
   const DAY_MIN = 1440;
   const SLOT_MIN = 30;
-
-  // ★ 追加：列の左右に必ず入れる余白(px)
   const GUTTER_PX = 4;
 
   // ====== DOM ======
@@ -28,7 +26,7 @@
   const newBtn = document.getElementById("newBtn");
 
   if (!daysHeader || !timeCol || !daysGrid) {
-    console.error("[calendar.js] required containers not found (#daysHeader/#timeCol/#daysGrid)");
+    console.error("[calendar.js] required containers not found");
     return;
   }
 
@@ -38,8 +36,8 @@
 
   // ====== URL params ======
   const qp = new URLSearchParams(location.search);
-  const mode = (qp.get("mode") || "week").toLowerCase(); // day/week/2week/month
-  const baseDateStr = qp.get("date"); // YYYY-MM-DD (JST)
+  const mode = (qp.get("mode") || "week").toLowerCase();
+  const baseDateStr = qp.get("date");
 
   // ====== JST formatter ======
   const dtfYMD = new Intl.DateTimeFormat("en-CA", {
@@ -89,7 +87,6 @@
     return jstDayKeyFromUtcMs(Date.now());
   }
 
-  // JSTの00:00をUTC msに変換（JST=UTC+9）
   function jstMidnightUtcMs(dayKey) {
     const [y, mo, d] = dayKey.split("-").map(Number);
     return Date.UTC(y, mo - 1, d, -9, 0, 0, 0);
@@ -101,7 +98,7 @@
   }
 
   function weekdayIndexInJstFromDayKey(dayKey) {
-    return new Date(jstMidnightUtcMs(dayKey)).getUTCDay(); // 0=Sun..6=Sat
+    return new Date(jstMidnightUtcMs(dayKey)).getUTCDay();
   }
 
   function startOfWeekMonday(dayKey) {
@@ -112,20 +109,16 @@
 
   function getRangeDays(modeName, baseKey) {
     if (modeName === "day") return [baseKey];
-
     const startKey = startOfWeekMonday(baseKey);
-
     if (modeName === "2week" || modeName === "2weeks") {
       return Array.from({ length: 14 }, (_, i) => addJstDays(startKey, i));
     }
-
     if (modeName === "month") {
       const [y, mo] = baseKey.split("-").map(Number);
       const first = `${y}-${pad2(mo)}-01`;
       const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();
       return Array.from({ length: daysInMonth }, (_, i) => addJstDays(first, i));
     }
-
     return Array.from({ length: 7 }, (_, i) => addJstDays(startKey, i));
   }
 
@@ -169,7 +162,6 @@
       const [y, mo, d] = dayKey.split("-").map(Number);
       const w = weekdayIndexInJstFromDayKey(dayKey);
       const wd = ["日", "月", "火", "水", "木", "金", "土"][w];
-
       const head = document.createElement("div");
       head.className = "cal-day-head";
       if (w === 6) head.classList.add("is-sat");
@@ -185,11 +177,9 @@
       const col = document.createElement("div");
       col.className = "cal-day-col";
       col.dataset.day = dayKey;
-
       const w = weekdayIndexInJstFromDayKey(dayKey);
       if (w === 6) col.classList.add("is-sat");
       if (w === 0) col.classList.add("is-sun");
-
       for (let m = 0; m < DAY_MIN; m += SLOT_MIN) {
         const line = document.createElement("div");
         line.className = "cal-slot-line";
@@ -221,20 +211,41 @@
     const text = await res.text();
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch {}
-
     if (!res.ok) {
       const msg = (json && (json.error || json.message)) || text || `HTTP ${res.status}`;
       throw new Error(msg);
     }
-
     return Array.isArray(json) ? json : (json && json.value) ? json.value : (json && json.projects) ? json.projects : [];
+  }
+
+  // ====== 在庫不足取得 ======
+  async function fetchShortages(days) {
+    try {
+      const from = jstMidnightUtcMs(days[0]);
+      const to = jstMidnightUtcMs(days[days.length - 1]) + 86400000;
+      const fromIso = new Date(from).toISOString();
+      const toIso = new Date(to).toISOString();
+      const res = await fetch(
+        `/api/shortages?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`,
+        { headers: { Accept: "application/json" } }
+      );
+      if (!res.ok) return new Map();
+      const json = await res.json();
+      const map = new Map();
+      for (const s of (json.projects || [])) {
+        map.set(s.project_id, s.shortage);
+      }
+      return map;
+    } catch (e) {
+      console.warn("shortage取得失敗:", e);
+      return new Map();
+    }
   }
 
   // ====== 重なりレイアウト ======
   function layoutOverlaps(segs) {
     const active = [];
     const result = [];
-
     let cluster = [];
     let clusterMaxEnd = -1;
 
@@ -254,10 +265,8 @@
       const used = new Set(active.map((a) => a.colIndex));
       let colIndex = 0;
       while (used.has(colIndex)) colIndex++;
-
       const placed = { ...s, colIndex, colCount: 1 };
       active.push({ endMin: s.endMin, colIndex });
-
       if (!cluster.length) {
         clusterMaxEnd = s.endMin;
       } else {
@@ -280,7 +289,7 @@
     document.querySelectorAll(".cal-project").forEach((el) => el.remove());
   }
 
-  function renderProjects(projects, visibleDays) {
+  function renderProjects(projects, visibleDays, shortageMap = new Map()) {
     clearProjectBlocks();
     const visibleSet = new Set(visibleDays);
     const segmentsByDay = new Map();
@@ -290,11 +299,9 @@
       const title = p.title || "(no title)";
       const status = p.status || "draft";
 
-      const shortage =
-        Boolean(p.shortage) ||
-        Boolean(p.is_shortage) ||
-        Boolean(p.stock_shortage) ||
-        (typeof p.shortage_count === "number" && p.shortage_count > 0);
+      const shortage = shortageMap.has(p.id)
+        ? shortageMap.get(p.id)
+        : Boolean(p.shortage) || Boolean(p.is_shortage);
 
       const startIso = p.usage_start_at || p.usage_start;
       const endIso = p.usage_end_at || p.usage_end;
@@ -306,10 +313,8 @@
 
       const startDayKey = jstDayKeyFromUtcMs(startUtc.getTime());
       const endDayKey = jstDayKeyFromUtcMs(endUtc.getTime());
-
       const startHm = jstHmFromUtcDate(startUtc);
       const endHm = jstHmFromUtcDate(endUtc);
-
       let startMin = minutesFromJstHm(startHm.hh, startHm.mm);
       let endMin = minutesFromJstHm(endHm.hh, endHm.mm);
 
@@ -321,17 +326,12 @@
       while (true) {
         const isFirst = dayKey === startDayKey;
         const isLast = dayKey === endDayKey;
-
         const segStart = isFirst ? startMin : 0;
         const segEnd = isLast ? endMin : DAY_MIN;
 
         if (visibleSet.has(dayKey)) {
           const seg = {
-            id,
-            title,
-            status,
-            shortage,
-            dayKey,
+            id, title, status, shortage, dayKey,
             startMin: clamp(segStart, 0, DAY_MIN),
             endMin: clamp(segEnd, 0, DAY_MIN),
             color_key: p.color_key || null,
@@ -360,11 +360,9 @@
       for (const s of laidOut) {
         const el = document.createElement("div");
         el.className = "cal-project";
-
         el.classList.add(String(s.status));
         if (s.shortage) el.classList.add("cal-project--shortage");
         if (s.color_key) el.classList.add(`cal-color--${s.color_key}`);
-
         el.dataset.id = String(s.id);
         el.dataset.day = s.dayKey;
         el.textContent = s.title;
@@ -376,8 +374,6 @@
 
         el.style.top = `${topPct}%`;
         el.style.height = `${heightPct}%`;
-
-        // ★ 重要：左右にGUTTER分を必ず確保して「列からはみ出さない」ようにする
         el.style.left = `calc(${leftPct}% + ${GUTTER_PX}px)`;
         el.style.width = `calc(${widthPct}% - ${GUTTER_PX * 2}px)`;
 
@@ -402,7 +398,6 @@
   async function main() {
     try {
       showError("");
-
       const baseKey = getBaseDayKey();
       const days = getRangeDays(mode, baseKey);
 
@@ -440,8 +435,11 @@
         location.href = `/project-new.html?return=${ret}`;
       });
 
-      const projects = await fetchProjects();
-      renderProjects(projects, days);
+      const [projects, shortageMap] = await Promise.all([
+        fetchProjects(),
+        fetchShortages(days),
+      ]);
+      renderProjects(projects, days, shortageMap);
     } catch (e) {
       console.error(e);
       showError(String(e.message || e));
