@@ -1,59 +1,81 @@
 // routes/auth.js
 const express = require("express");
 const router = express.Router();
-const jwt = require("jsonwebtoken");
 const db = require("../db");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
+const JWT_SECRET = process.env.JWT_SECRET || "warehouse_secret_key";
+const JWT_EXPIRES = "7d";
 
 /**
- * POST /login
- * body: { email }
- * 仕様:
- * - emailだけでログイン（パスワード不要）
- * - users に該当emailが無ければ自動作成（admin扱い）
- * - token を返す
+ * POST /api/auth/login
  */
 router.post("/login", async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, password } = req.body;
 
-    if (!email) {
-      return res.status(400).json({ error: "Email required" });
+    if (!email || !password) {
+      return res.status(400).json({ error: "メールとパスワードを入力してください" });
     }
 
-    // usersテーブルから検索
-    const found = await db.query(
-      "SELECT id, name, email, role FROM users WHERE email = $1 LIMIT 1",
+    const result = await db.query(
+      "SELECT id, name, email, password_hash, role FROM users WHERE email = $1",
       [email]
     );
 
-    let user = found.rows[0];
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: "メールまたはパスワードが違います" });
+    }
 
-    // 無ければ自動作成
-    if (!user) {
-      const created = await db.query(
-        `
-        INSERT INTO users (name, email, role)
-        VALUES ($1, $2, $3)
-        RETURNING id, name, email, role
-        `,
-        ["Admin", email, "admin"]
-      );
-      user = created.rows[0];
+    const user = result.rows[0];
+    const valid = await bcrypt.compare(password, user.password_hash);
+
+    if (!valid) {
+      return res.status(401).json({ error: "メールまたはパスワードが違います" });
     }
 
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, name: user.name },
       JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: JWT_EXPIRES }
     );
 
-    res.json({ token, user });
+    res.json({
+      token,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Login failed" });
+    res.status(500).json({ error: "ログインに失敗しました" });
   }
+});
+
+/**
+ * GET /api/auth/me
+ * トークン検証用
+ */
+router.get("/me", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "認証が必要です" });
+    }
+
+    const token = authHeader.slice(7);
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    res.json({ user: decoded });
+  } catch (err) {
+    res.status(401).json({ error: "トークンが無効です" });
+  }
+});
+
+/**
+ * POST /api/auth/logout
+ */
+router.post("/logout", (req, res) => {
+  res.json({ success: true });
 });
 
 module.exports = router;
