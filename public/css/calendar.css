@@ -3,322 +3,231 @@
    ========================================================= */
 
 :root{
-  --cell-h:28px;
-  --line-hour:#9ca3af;
-  --line-half:#e5e7eb;
-  --text-main:#111827;
-  --text-sub:#6b7280;
+  --cell-h: 28px;
+  --time-w: 72px;
+  --line-hour: #9ca3af;
+  --line-half: #e5e7eb;
+  --text-main: #111827;
+  --text-sub: #6b7280;
 }
 
+/* ---- ナビボタン ---- */
+.cal-nav-btn{
+  width: 88px;
+  padding: 6px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.cal-error{ color: #b91c1c; min-height: 18px; }
+
 /* =========================================================
-   枠
+   グリッド構造
    ========================================================= */
+
+/*
+  レイアウト:
+  [固定ヘッダー (position:fixed)]
+  [スペーサー]
+  [#gridRoot]
+    [.cal-header-row]  ← 時間コーナー + 日付ヘッダー (sticky)
+    [.cal-body-row]    ← 時間列 (sticky left) + グリッド本体
+*/
 
 #gridRoot{
-  border:1px solid #e5e7eb;
-  border-radius:12px;
-  background:#fff;
-  overflow:visible;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
-/* =========================================================
-   上部
-   ========================================================= */
-
-.cal-topbar{
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-  margin-bottom:8px;
-  padding-top:64px;
+/* ---- ヘッダー行（日付 + コーナー）---- */
+.cal-header-row{
+  display: flex;
+  position: sticky;
+  top: 88px;
+  z-index: 50;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
 }
 
-.cal-title{
-  font-size:18px;
-  margin:0;
+.cal-time-corner{
+  min-width: var(--time-w);
+  flex-shrink: 0;
+  border-right: 1px solid #e5e7eb;
+  background: #fff;
 }
-
-.cal-controls{
-  display:flex;
-  justify-content:center;
-  gap:10px;
-  flex-wrap:wrap;
-}
-
-.cal-mode-btn{
-  border:0;
-  background:transparent;
-  font-weight:600;
-  font-size:17px;
-  padding:10px;
-  border-radius:12px;
-  cursor:pointer;
-}
-
-.cal-mode-btn.is-active{
-  background:#2563eb;
-  color:#fff;
-}
-
-.cal-date{
-  padding:10px 12px;
-  border:1px solid #e5e7eb;
-  border-radius:10px;
-}
-
-/* =========================================================
-   ナビ（常に上部固定）
-   ========================================================= */
-
-.cal-nav-row{
-  display:grid;
-  grid-template-columns:1fr auto 1fr;
-  align-items:center;
-  position:fixed;
-  top:0;
-  left:0;
-  right:0;
-  z-index:200;
-  background:#fff;
-  padding:6px 12px;
-  border-bottom:1px solid #e5e7eb;
-  box-shadow:0 2px 8px rgba(0,0,0,0.06);
-}
-
-#prevBtn{justify-self:start;}
-#nextBtn{justify-self:end;}
-
-.cal-nav-mid{
-  justify-self:center;
-  display:flex;
-  gap:12px;
-}
-
-.cal-nav-btn{
-  width:126px;
-  padding:8px;
-  border:1px solid #e5e7eb;
-  background:#fff;
-  border-radius:10px;
-  cursor:pointer;
-  font-weight:700;
-  font-size:13px;
-}
-
-.cal-error{
-  color:#b91c1c;
-  min-height:18px;
-}
-
-/* =========================================================
-   グリッド
-   ========================================================= */
-
-.cal-grid-shell{
-  display:grid;
-  grid-template-columns:72px 1fr;
-  grid-template-rows:auto 1fr;
-  min-width:0;
-}
-
-.cal-corner{
-  grid-column:1;
-  grid-row:1;
-  border-right:1px solid #e5e7eb;
-  border-bottom:1px solid #e5e7eb;
-  background:#fff;
-  position:sticky;
-  left:0;
-  z-index:10;
-}
-
-/* =========================================================
-   日付ヘッダー
-   ========================================================= */
 
 .cal-days-header{
-  grid-column:2;
-  grid-row:1;
-  display:grid;
-  grid-auto-flow:column;
-  grid-auto-columns:minmax(120px,1fr);
-  border-bottom:1px solid #e5e7eb;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(120px, 1fr);
+  flex: 1;
+  min-width: 0;
 }
 
 .cal-day-head{
-  padding:10px 8px;
-  border-left:1px solid #e5e7eb;
-  font-weight:700;
+  padding: 6px 8px;
+  border-left: 1px solid #e5e7eb;
+  font-weight: 700;
+  font-size: 13px;
 }
 
-.cal-day-head.is-sat{background:#eaf3ff;}
-.cal-day-head.is-sun{background:#ffecec;}
+.cal-day-head.is-sat{ background: #eaf3ff; }
+.cal-day-head.is-sun{ background: #ffecec; }
 
-/* =========================================================
-   時刻列
-   ========================================================= */
+/* ---- ボディ行（時間列 + グリッド）---- */
+.cal-body-row{
+  display: flex;
+}
 
 .cal-time-col{
-  grid-column:1;
-  grid-row:2;
-  position:sticky;
-  left:0;
-  z-index:10;
-  background:#fff;
-  border-right:1px solid #e5e7eb;
+  min-width: var(--time-w);
+  flex-shrink: 0;
+  position: sticky;
+  left: 0;
+  z-index: 30;
+  background: #fff;
+  border-right: 1px solid #e5e7eb;
 }
 
 .cal-time-slot{
-  height:var(--cell-h);
-  display:flex;
-  align-items:center;
-  justify-content:flex-end;
-  padding-right:10px;
-  font-size:12px;
-  color:var(--text-sub);
-  position:relative;
-  border:none !important;
-}
-
-.cal-time-slot::after{
-  content:"";
-  position:absolute;
-  left:4px;
-  right:4px;
-  top:0;
-  border-top:1px dashed var(--line-half);
+  height: var(--cell-h);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding-right: 8px;
+  padding-top: 2px;
+  font-size: 11px;
+  color: var(--text-sub);
+  position: relative;
+  box-sizing: border-box;
 }
 
 .cal-time-slot.is-hour{
-  font-weight:700;
-  color:var(--text-main);
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 12px;
 }
 
-.cal-time-slot.is-hour::after{
-  border-top:2px solid var(--line-hour);
-}
-
-/* =========================================================
-   本体
-   ========================================================= */
-
-.cal-days-body{
-  grid-column:2;
-  grid-row:2;
-  overflow-x:auto;
-  overflow-y:hidden;
+/* ---- グリッド本体 ---- */
+.cal-days-grid-wrap{
+  flex: 1;
+  min-width: 0;
+  overflow-x: visible;
 }
 
 .cal-days-grid{
-  display:grid;
-  grid-auto-flow:column;
-  grid-auto-columns:minmax(120px,1fr);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(120px, 1fr);
 }
-
-/* =========================================================
-   日列
-   ========================================================= */
 
 .cal-day-col{
-  position:relative;
-  overflow:hidden;
-  border-left:1px solid #e5e7eb;
-  min-height:calc(var(--cell-h) * 48);
-  isolation:isolate;
+  position: relative;
+  overflow: hidden;
+  border-left: 1px solid #e5e7eb;
+  min-height: calc(var(--cell-h) * 48);
+  isolation: isolate;
 }
 
-.cal-day-col.is-sat{background:#f6fbff;}
-.cal-day-col.is-sun{background:#fff7f7;}
-
-/* =========================================================
-   30分線
-   ========================================================= */
+.cal-day-col.is-sat{ background: #f6fbff; }
+.cal-day-col.is-sun{ background: #fff7f7; }
 
 .cal-slot-line{
-  height:var(--cell-h);
-  position:relative;
-  border:none !important;
+  height: var(--cell-h);
+  position: relative;
+  box-sizing: border-box;
 }
 
 .cal-slot-line::before{
-  content:"";
-  position:absolute;
-  left:0;
-  right:0;
-  top:0;
-  border-top:1px dashed var(--line-half);
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  border-top: 1px dashed var(--line-half);
 }
-
-/* =========================================================
-   1時間線
-   ========================================================= */
 
 .cal-slot-line.hour::before{
-  border-top:2px solid var(--line-hour);
+  border-top: 2px solid var(--line-hour);
 }
 
-/* =========================================================
-   案件
-   ========================================================= */
-
+/* ---- 案件ブロック ---- */
 .cal-project{
-  position:absolute;
-  border-radius:6px;
-  padding:6px 8px;
-  font-size:12px;
-  font-weight:700;
-  cursor:pointer;
-  box-shadow:none;
-  color:#111827;
-  box-sizing:border-box;
+  position: absolute;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #111827;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
-.cal-project.draft{background:#93c5fd;}
-.cal-project.confirmed{background:#86efac;}
-.cal-project.cancelled{background:#fca5a5;}
+.cal-project.draft{ background: #93c5fd; }
+.cal-project.confirmed{ background: #86efac; }
+.cal-project.cancelled{ background: #fca5a5; }
 
 .cal-project.cal-project--shortage{
-  box-shadow:0 0 0 3px #dc2626 inset;
+  box-shadow: 0 0 0 3px #dc2626 inset;
 }
 
-/* =========================================================
-   カスタム色
-   ========================================================= */
+.cal-project.cal-color--1{ background: #fecaca; }
+.cal-project.cal-color--2{ background: #fed7aa; }
+.cal-project.cal-color--3{ background: #fef3c7; }
+.cal-project.cal-color--4{ background: #d9f99d; }
+.cal-project.cal-color--5{ background: #bbf7d0; }
+.cal-project.cal-color--6{ background: #a7f3d0; }
+.cal-project.cal-color--7{ background: #99f6e4; }
+.cal-project.cal-color--8{ background: #a5f3fc; }
+.cal-project.cal-color--9{ background: #bae6fd; }
+.cal-project.cal-color--10{ background: #c7d2fe; }
+.cal-project.cal-color--11{ background: #e9d5ff; }
+.cal-project.cal-color--12{ background: #fbcfe8; }
 
-.cal-project.cal-color--1{background:#fecaca;}
-.cal-project.cal-color--2{background:#fed7aa;}
-.cal-project.cal-color--3{background:#fef3c7;}
-.cal-project.cal-color--4{background:#d9f99d;}
-.cal-project.cal-color--5{background:#bbf7d0;}
-.cal-project.cal-color--6{background:#a7f3d0;}
-.cal-project.cal-color--7{background:#99f6e4;}
-.cal-project.cal-color--8{background:#a5f3fc;}
-.cal-project.cal-color--9{background:#bae6fd;}
-.cal-project.cal-color--10{background:#c7d2fe;}
-.cal-project.cal-color--11{background:#e9d5ff;}
-.cal-project.cal-color--12{background:#fbcfe8;}
+/* ---- レスポンシブ ---- */
+@media (max-width: 600px){
+  .cal-nav-btn{ width: 70px; font-size: 11px; padding: 5px; }
+  .cal-days-header{ grid-auto-columns: minmax(80px, 1fr); }
+  .cal-days-grid{ grid-auto-columns: minmax(80px, 1fr); }
+  .cal-day-head{ font-size: 11px; padding: 4px; }
+}
 
-/* =========================================================
-   レスポンシブ（縮小対応）
-   ========================================================= */
+/* ---- 発送ボタン ---- */
+.cal-ship-btn-area{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 4px;
+}
 
-@media (max-width:600px){
-  .cal-nav-btn{
-    width:80px;
-    font-size:11px;
-    padding:6px;
-  }
+.cal-ship-btn{
+  display: block;
+  width: 100%;
+  background: #fecaca;
+  border: 1px solid #f87171;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #7f1d1d;
+  padding: 3px 6px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: 28px;
+  line-height: 22px;
+  box-sizing: border-box;
+}
 
-  .cal-days-header{
-    grid-auto-columns:minmax(80px,1fr);
-  }
-
-  .cal-days-grid{
-    grid-auto-columns:minmax(80px,1fr);
-  }
-
-  .cal-day-head{
-    font-size:11px;
-    padding:6px 4px;
-  }
+.cal-ship-btn:hover{
+  background: #fca5a5;
 }

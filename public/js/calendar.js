@@ -1,13 +1,11 @@
 (() => {
   "use strict";
 
-  // ====== 設定 ======
   const TZ = "Asia/Tokyo";
   const DAY_MIN = 1440;
   const SLOT_MIN = 30;
   const GUTTER_PX = 4;
 
-  // ====== DOM ======
   const daysHeader = document.getElementById("daysHeader");
   const timeCol = document.getElementById("timeCol");
   const daysGrid = document.getElementById("daysGrid");
@@ -34,27 +32,17 @@
     if (errorText) errorText.textContent = msg || "";
   }
 
-  // ====== URL params ======
   const qp = new URLSearchParams(location.search);
   const mode = (qp.get("mode") || "week").toLowerCase();
   const baseDateStr = qp.get("date");
 
-  // ====== JST formatter ======
   const dtfYMD = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
+    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
   });
 
   const dtfYMDHM = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
+    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   });
 
   function partsFromDateInJst(dateObj, withTime) {
@@ -62,34 +50,24 @@
     const m = Object.create(null);
     for (const p of parts) if (p.type !== "literal") m[p.type] = p.value;
     return {
-      y: Number(m.year),
-      mo: Number(m.month),
-      d: Number(m.day),
-      hh: withTime ? Number(m.hour) : 0,
-      mm: withTime ? Number(m.minute) : 0,
+      y: Number(m.year), mo: Number(m.month), d: Number(m.day),
+      hh: withTime ? Number(m.hour) : 0, mm: withTime ? Number(m.minute) : 0,
     };
   }
 
-  function pad2(n) {
-    return String(n).padStart(2, "0");
-  }
-
-  function toDayKey(y, mo, d) {
-    return `${y}-${pad2(mo)}-${pad2(d)}`;
-  }
+  function pad2(n) { return String(n).padStart(2, "0"); }
+  function toDayKey(y, mo, d) { return `${y}-${pad2(mo)}-${pad2(d)}`; }
 
   function jstDayKeyFromUtcMs(utcMs) {
     const p = partsFromDateInJst(new Date(utcMs), false);
     return toDayKey(p.y, p.mo, p.d);
   }
 
-  function jstTodayKey() {
-    return jstDayKeyFromUtcMs(Date.now());
-  }
+  function jstTodayKey() { return jstDayKeyFromUtcMs(Date.now()); }
 
   function jstMidnightUtcMs(dayKey) {
     const [y, mo, d] = dayKey.split("-").map(Number);
-    return Date.UTC(y, mo - 1, d, -9, 0, 0, 0);
+    return Date.UTC(y, mo - 1, d, 0, 0, 0, 0) - 9 * 60 * 60 * 1000;
   }
 
   function addJstDays(dayKey, deltaDays) {
@@ -98,7 +76,8 @@
   }
 
   function weekdayIndexInJstFromDayKey(dayKey) {
-    return new Date(jstMidnightUtcMs(dayKey)).getUTCDay();
+    const [y, mo, d] = dayKey.split("-").map(Number);
+    return new Date(Date.UTC(y, mo - 1, d, 0, 0, 0, 0)).getUTCDay();
   }
 
   function startOfWeekMonday(dayKey) {
@@ -127,19 +106,10 @@
     return { hh: p.hh, mm: p.mm };
   }
 
-  function minutesFromJstHm(hh, mm) {
-    return hh * 60 + mm;
-  }
+  function minutesFromJstHm(hh, mm) { return hh * 60 + mm; }
+  function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+  function clearChildren(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
-  function clamp(n, min, max) {
-    return Math.max(min, Math.min(max, n));
-  }
-
-  function clearChildren(el) {
-    while (el.firstChild) el.removeChild(el.firstChild);
-  }
-
-  // ====== UI構築 ======
   function buildTimeCol() {
     clearChildren(timeCol);
     for (let m = 0; m < DAY_MIN; m += SLOT_MIN) {
@@ -147,10 +117,7 @@
       slot.className = "cal-time-slot";
       if (m % 60 === 0) {
         slot.classList.add("is-hour");
-        const hh = Math.floor(m / 60);
-        slot.textContent = `${pad2(hh)}:00`;
-      } else {
-        slot.textContent = "";
+        slot.textContent = `${pad2(Math.floor(m / 60))}:00`;
       }
       timeCol.appendChild(slot);
     }
@@ -164,9 +131,19 @@
       const wd = ["日", "月", "火", "水", "木", "金", "土"][w];
       const head = document.createElement("div");
       head.className = "cal-day-head";
+      head.dataset.day = dayKey;
       if (w === 6) head.classList.add("is-sat");
       if (w === 0) head.classList.add("is-sun");
-      head.textContent = `${mo}/${d}(${wd})`;
+
+      const label = document.createElement("div");
+      label.textContent = `${mo}/${d}(${wd})`;
+      head.appendChild(label);
+
+      const btnArea = document.createElement("div");
+      btnArea.className = "cal-ship-btn-area";
+      btnArea.dataset.dayBtns = dayKey;
+      head.appendChild(btnArea);
+
       daysHeader.appendChild(head);
     }
   }
@@ -205,9 +182,11 @@
     location.href = u.pathname + "?" + u.searchParams.toString();
   }
 
-  // ====== API ======
   async function fetchProjects() {
-    const res = await fetch("/api/projects", { headers: { Accept: "application/json" } });
+    const token = localStorage.getItem('token') || '';
+    const res = await fetch("/api/projects", {
+      headers: { Accept: "application/json", Authorization: `Bearer ${token}` }
+    });
     const text = await res.text();
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch {}
@@ -218,7 +197,6 @@
     return Array.isArray(json) ? json : (json && json.value) ? json.value : (json && json.projects) ? json.projects : [];
   }
 
-  // ====== 在庫不足取得 ======
   async function fetchShortages(days) {
     try {
       const from = jstMidnightUtcMs(days[0]);
@@ -242,7 +220,6 @@
     }
   }
 
-  // ====== 重なりレイアウト ======
   function layoutOverlaps(segs) {
     const active = [];
     const result = [];
@@ -284,7 +261,6 @@
     return result;
   }
 
-  // ====== 描画 ======
   function clearProjectBlocks() {
     document.querySelectorAll(".cal-project").forEach((el) => el.remove());
   }
@@ -298,37 +274,28 @@
       const id = p.id;
       const title = p.title || "(no title)";
       const status = p.status || "draft";
-
-      const shortage = shortageMap.has(p.id)
-        ? shortageMap.get(p.id)
-        : Boolean(p.shortage) || Boolean(p.is_shortage);
-
+      const shortage = shortageMap.has(p.id) ? shortageMap.get(p.id) : Boolean(p.shortage) || Boolean(p.is_shortage);
       const startIso = p.usage_start_at || p.usage_start;
       const endIso = p.usage_end_at || p.usage_end;
       if (!startIso || !endIso) continue;
-
       const startUtc = new Date(startIso);
       const endUtc = new Date(endIso);
       if (Number.isNaN(startUtc.getTime()) || Number.isNaN(endUtc.getTime())) continue;
-
       const startDayKey = jstDayKeyFromUtcMs(startUtc.getTime());
       const endDayKey = jstDayKeyFromUtcMs(endUtc.getTime());
       const startHm = jstHmFromUtcDate(startUtc);
       const endHm = jstHmFromUtcDate(endUtc);
       let startMin = minutesFromJstHm(startHm.hh, startHm.mm);
       let endMin = minutesFromJstHm(endHm.hh, endHm.mm);
-
       if (startDayKey === endDayKey && endMin <= startMin) {
         endMin = clamp(startMin + SLOT_MIN, 0, DAY_MIN);
       }
-
       let dayKey = startDayKey;
       while (true) {
         const isFirst = dayKey === startDayKey;
         const isLast = dayKey === endDayKey;
         const segStart = isFirst ? startMin : 0;
         const segEnd = isLast ? endMin : DAY_MIN;
-
         if (visibleSet.has(dayKey)) {
           const seg = {
             id, title, status, shortage, dayKey,
@@ -341,7 +308,6 @@
             segmentsByDay.get(dayKey).push(seg);
           }
         }
-
         if (isLast) break;
         dayKey = addJstDays(dayKey, 1);
       }
@@ -350,13 +316,10 @@
     for (const dayKey of visibleDays) {
       const col = daysGrid.querySelector(`.cal-day-col[data-day="${dayKey}"]`);
       if (!col) continue;
-
       const segs = (segmentsByDay.get(dayKey) || [])
         .slice()
         .sort((a, b) => (a.startMin - b.startMin) || (a.endMin - b.endMin) || (a.id - b.id));
-
       const laidOut = layoutOverlaps(segs);
-
       for (const s of laidOut) {
         const el = document.createElement("div");
         el.className = "cal-project";
@@ -366,30 +329,50 @@
         el.dataset.id = String(s.id);
         el.dataset.day = s.dayKey;
         el.textContent = s.title;
-
         const topPct = (s.startMin / DAY_MIN) * 100;
         const heightPct = ((s.endMin - s.startMin) / DAY_MIN) * 100;
         const leftPct = (s.colIndex / s.colCount) * 100;
         const widthPct = (1 / s.colCount) * 100;
-
         el.style.top = `${topPct}%`;
         el.style.height = `${heightPct}%`;
         el.style.left = `calc(${leftPct}% + ${GUTTER_PX}px)`;
         el.style.width = `calc(${widthPct}% - ${GUTTER_PX * 2}px)`;
-
         el.addEventListener("click", (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
           const ret = encodeURIComponent(location.pathname + location.search);
           location.href = `/project-edit.html?id=${encodeURIComponent(String(s.id))}&return=${ret}`;
         });
-
         col.appendChild(el);
       }
     }
   }
 
-  // ====== main ======
+  function renderShipBtns(projects) {
+    document.querySelectorAll('.cal-ship-btn-area').forEach(a => a.innerHTML = '');
+    for (const p of projects) {
+      if (!p.shipping_date) continue;
+      const shipDayKey = p.shipping_date.slice(0, 10);
+      const btnArea = document.querySelector(`.cal-ship-btn-area[data-day-btns="${shipDayKey}"]`);
+      if (!btnArea) continue;
+      const startUtc = new Date(p.usage_start_at || p.usage_start);
+      const startParts = partsFromDateInJst(startUtc, false);
+      const mo = startParts.mo;
+      const da = startParts.d;
+      const btn = document.createElement('button');
+      btn.className = 'cal-ship-btn';
+      btn.innerHTML = `【発送】${p.title || ''} ${mo}/${da}`;
+      btn.title = `【発送】${p.title || ''} ${mo}/${da}`;
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const ret = encodeURIComponent(location.pathname + location.search);
+        location.href = `/checklist.html?project_id=${encodeURIComponent(String(p.id))}&return=${ret}`;
+      });
+      btnArea.appendChild(btn);
+    }
+  }
+
   function getBaseDayKey() {
     if (baseDateStr && /^\d{4}-\d{2}-\d{2}$/.test(baseDateStr)) return baseDateStr;
     return jstTodayKey();
@@ -400,46 +383,46 @@
       showError("");
       const baseKey = getBaseDayKey();
       const days = getRangeDays(mode, baseKey);
-
       setActiveModeBtn(mode);
       if (datePicker) datePicker.value = baseKey;
-
       buildTimeCol();
       buildDaysHeader(days);
       buildDaysGrid(days);
-
       if (datePicker) {
         datePicker.addEventListener("change", () => {
           const v = datePicker.value;
           if (/^\d{4}-\d{2}-\d{2}$/.test(v)) navigateTo(mode, v);
         });
       }
-
       Object.entries(modeBtns).forEach(([k, btn]) => {
         if (!btn) return;
         btn.addEventListener("click", () => navigateTo(k, baseKey));
       });
-
       prevBtn && prevBtn.addEventListener("click", () => {
         const step = mode === "day" ? -1 : mode === "2week" ? -14 : mode === "month" ? -30 : -7;
         navigateTo(mode, addJstDays(baseKey, step));
       });
-
       nextBtn && nextBtn.addEventListener("click", () => {
         const step = mode === "day" ? 1 : mode === "2week" ? 14 : mode === "month" ? 30 : 7;
         navigateTo(mode, addJstDays(baseKey, step));
       });
-
       newBtn && newBtn.addEventListener("click", () => {
         const ret = encodeURIComponent(location.pathname + location.search);
         location.href = `/project-new.html?return=${ret}`;
       });
-
       const [projects, shortageMap] = await Promise.all([
         fetchProjects(),
         fetchShortages(days),
       ]);
       renderProjects(projects, days, shortageMap);
+      renderShipBtns(projects);
+
+      // 7:00の位置にスクロール
+      const slots = timeCol.querySelectorAll(".cal-time-slot");
+      if (slots.length > 14) {
+        const slotH = slots[0].getBoundingClientRect().height || 28;
+        window.scrollTo({ top: slotH * 14 * 2, behavior: "instant" });
+      }
     } catch (e) {
       console.error(e);
       showError(String(e.message || e));

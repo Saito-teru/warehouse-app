@@ -7,12 +7,85 @@
   <title>カレンダー</title>
   <link rel="stylesheet" href="/css/calendar.css" />
   <link rel="icon" href="data:," />
+  <style>
+    body { margin: 0; padding: 0; font-family: sans-serif; }
+
+    /* ---- 固定ヘッダー ---- */
+    .cal-header-fixed {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 200;
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .cal-nav-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 6px 12px;
+    }
+    .cal-controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      flex-wrap: wrap;
+    }
+    .cal-mode-btn {
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      font-weight: 600;
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .cal-mode-btn.is-active { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .cal-date {
+      padding: 5px 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+    .cal-nav-btn {
+      width: 88px;
+      padding: 6px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 12px;
+    }
+    #prevBtn { justify-self: start; }
+    #nextBtn { justify-self: end; }
+    .cal-nav-mid {
+      justify-self: center;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .cal-error { color: #b91c1c; min-height: 18px; font-size: 12px; }
+    .cal-topbar-spacer { height: 88px; }
+  </style>
 </head>
 <body>
 
-  <div class="cal-topbar">
-    <h1 class="cal-title">カレンダー</h1>
-
+  <!-- 固定ヘッダー -->
+  <div class="cal-header-fixed">
+    <div class="cal-nav-row">
+      <button class="cal-nav-btn" id="prevBtn" type="button">戻る</button>
+      <div class="cal-nav-mid">
+        <button class="cal-nav-btn" id="newBtn" type="button">新規作成</button>
+        <a class="cal-nav-btn" href="/equipment.html" style="text-decoration:none; text-align:center; line-height:2;">機材管理</a>
+        <p class="cal-error" id="errorText"></p>
+      </div>
+      <button class="cal-nav-btn" id="nextBtn" type="button">進む</button>
+    </div>
     <div class="cal-controls">
       <button class="cal-mode-btn" data-mode="day"   id="modeDay"   type="button">日</button>
       <button class="cal-mode-btn" data-mode="week"  id="modeWeek"  type="button">週</button>
@@ -20,47 +93,30 @@
       <button class="cal-mode-btn" data-mode="month" id="modeMonth" type="button">月</button>
       <input type="date" class="cal-date" id="datePicker" />
     </div>
-
-    <div class="cal-nav-row">
-      <button class="cal-nav-btn" id="prevBtn" type="button">戻る</button>
-
-      <div class="cal-nav-mid">
-        <button class="cal-nav-btn" id="newBtn" type="button">新規作成</button>
-        <p class="cal-error cal-error--center" id="errorText"></p>
-      </div>
-
-      <button class="cal-nav-btn" id="nextBtn" type="button">進む</button>
-    </div>
-
-    <div style="text-align:right; padding: 4px 12px; font-size:13px; color:#6b7280;">
-      <span id="userName"></span>
-      <button id="logoutBtn" style="margin-left:12px; padding:4px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer; font-size:13px;">ログアウト</button>
-    </div>
   </div>
 
+  <div class="cal-topbar-spacer"></div>
+
+  <!-- カレンダーグリッド -->
   <div id="gridRoot">
-    <div class="cal-grid-shell">
-      <div class="cal-corner"></div>
+    <!-- 日付ヘッダー行（sticky） -->
+    <div class="cal-header-row">
+      <div class="cal-time-corner"></div>
       <div class="cal-days-header" id="daysHeader"></div>
+    </div>
+    <!-- ボディ行 -->
+    <div class="cal-body-row">
       <div class="cal-time-col" id="timeCol"></div>
-      <div class="cal-days-body" id="daysBody">
+      <div class="cal-days-grid-wrap">
         <div class="cal-days-grid" id="daysGrid"></div>
       </div>
     </div>
   </div>
 
   <script src="/js/auth.js"></script>
-  <script src="/js/calendar.js?v=20260224c"></script>
+  <script src="/js/calendar.js"></script>
   <script>
-    // ユーザー名表示
-    const user = window.authUtils.getUser();
-    if (user) {
-      document.getElementById('userName').textContent = user.name + ' さん';
-    }
-    // ログアウト
-    document.getElementById('logoutBtn').addEventListener('click', () => {
-      window.authUtils.logout();
-    });
+    const user = window.authUtils ? window.authUtils.getUser() : null;
   </script>
 </body>
 </html>
